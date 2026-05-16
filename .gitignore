@@ -1,0 +1,15 @@
+
+# Local large files
+my_models/
+排课结果/*.pkl
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+# Logs and caches
+*.log
+.cache/
