@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Tuple
 from Basic_Data import *
 from utils1 import *
 import re
+import math 
 
 
 DASH_VARIANTS = "－–—~～至到"   # 常见连接符
@@ -214,7 +215,7 @@ def new_generate_day_patterns(zxs, days_of_week, time_constraints=None,flag_resc
     time_constraints = time_constraints or {'preferred_groups': [], 'preferred_options': [], 'unavailable': []}
     preferred_groups = list(time_constraints.get('preferred_groups', []) or [])
     preferred_options = time_constraints.get('preferred_options', []) or []
-
+    zxs = math.ceil(zxs)    #先向上取整
     # 无显式 [] 组、仅有 options 且各槽可固定为「单天+单连续块」、总学时=zxs → 提升为 preferred_groups（与解析出的组结构一致），并清空 options，便于后续 availability 走 groups 分支
     if not preferred_groups and preferred_options:
         promoted = _try_promote_options_to_preferred_groups(preferred_options, zxs)

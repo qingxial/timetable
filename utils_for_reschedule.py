@@ -15,14 +15,21 @@ from collections import defaultdict
 #teacher_excel = os.path.join(root_path, '教师信息汇总.xlsx')
 #banji_excel = os.path.join(root_path, '班级汇总.xlsx')
 
-root_path = '智能排课基础数据'
-course_excel = os.path.join(root_path, '课程表2025-2026-1.xlsx')
-classroom_excel = os.path.join(root_path, '更新后的教室表.xlsx')
-teacher_excel = os.path.join(root_path, '更新后的教师名单2025-2026-1.xlsx')
-banji_excel = os.path.join(root_path, '班级汇总2025-2026-1.xlsx')
+# root_path = '智能排课基础数据'
+# course_excel = os.path.join(root_path, '课程表2025-2026-1.xlsx')
+# classroom_excel = os.path.join(root_path, '更新后的教室表.xlsx')
+# teacher_excel = os.path.join(root_path, '更新后的教师名单2025-2026-1.xlsx')
+# banji_excel = os.path.join(root_path, '班级汇总2025-2026-1.xlsx')
+
+
+root_path = os.path.join(os.path.dirname(__file__), '智能排课基础数据', '提取的基础数据表_converted')
+course_excel = os.path.join(root_path, '课程表.xlsx')
+classroom_excel =  os.path.join(root_path, '教室表.xlsx')
+teacher_excel = os.path.join(root_path, '教师表.xlsx')
+banji_excel = os.path.join(root_path, '班级表.xlsx')
 
 # 排课参数
-num_weeks = 17
+num_weeks = 20
 num_periods = 11
 num_days = 7
 

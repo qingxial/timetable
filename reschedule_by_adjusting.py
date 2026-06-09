@@ -13,15 +13,21 @@ from utils_for_reschedule import *
 #teacher_excel = os.path.join(root_path, '教师信息汇总.xlsx')
 #banji_excel = os.path.join(root_path, '班级汇总.xlsx')
 
-root_path = '智能排课基础数据'
-course_excel = os.path.join(root_path, '课程表2025-2026-1.xlsx')
-#course_excel=os.path.join(root_path,'测试课程表.xlsx')
-classroom_excel = os.path.join(root_path, '更新后的教室表.xlsx')
-teacher_excel = os.path.join(root_path, '更新后的教师名单2025-2026-1.xlsx')
-banji_excel = os.path.join(root_path, '班级汇总2025-2026-1.xlsx')
+# root_path = '智能排课基础数据'
+# course_excel = os.path.join(root_path, '课程表2025-2026-1.xlsx')
+# #course_excel=os.path.join(root_path,'测试课程表.xlsx')
+# classroom_excel = os.path.join(root_path, '更新后的教室表.xlsx')
+# teacher_excel = os.path.join(root_path, '更新后的教师名单2025-2026-1.xlsx')
+# banji_excel = os.path.join(root_path, '班级汇总2025-2026-1.xlsx')
+
+BASE_DIR = os.path.join(os.path.dirname(__file__), '智能排课基础数据', '提取的基础数据表_converted')
+course_excel = os.path.join(BASE_DIR, '课程表.xlsx')
+classroom_excel =  os.path.join(BASE_DIR, '教室表.xlsx')
+teacher_excel = os.path.join(BASE_DIR, '教师表.xlsx')
+banji_excel = os.path.join(BASE_DIR, '班级表.xlsx')
 
 # 排课参数
-num_weeks = 17
+num_weeks = 20
 num_periods = 11
 num_days = 7
 
@@ -693,6 +699,7 @@ def reschedule(timetables_data):
         
         # 获取课程的周学时
         zxs = jxbs[0].ZXS if hasattr(jxbs[0], 'ZXS') else 0
+        # zxs = math.ceil(zxs)
         print(f"课程周学时: {zxs}")
         
         # 获取课程的教学周次

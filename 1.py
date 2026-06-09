@@ -1,84 +1,168 @@
-# from openai import OpenAI
+import pandas as pd
+import re
 
-# client = OpenAI(
-#     base_url='https://api-inference.modelscope.cn/v1',
-#     api_key='ms-7c42ddc8-2c92-40e2-af21-a3fa92c6825d', # ModelScope Token
+# 读取Excel
+# df = pd.read_excel("/Users/qingxia/Downloads/Python-projects/毕设/timetable/智能排课基础数据/提取的基础数据表_converted/课程表.xlsx")
+
+
+import pandas as pd
+
+file_path = "/Users/qingxia/Downloads/Python-projects/毕设/timetable/智能排课基础数据/提取的基础数据表_converted/课程表.xlsx"
+# output_file = "/Users/qingxia/Downloads/Python-projects/毕设/timetable/排课结果/课程聚类结果2.xlsx"
+
+# df = pd.read_excel(input_file)
+
+# import pandas as pd
+
+
+df = pd.read_excel(file_path)
+
+# 体育课程
+sport_mask = df["课程名称"].astype(str).str.contains("体育与健康4", na=False)
+
+for idx in df[sport_mask].index:
+
+    old_time = df.at[idx, "避免排课时间"]
+
+    if pd.isna(old_time) or str(old_time).strip() == "":
+        df.at[idx, "避免排课时间"] = "全周（1-2节）"
+
+    elif "全周（1-2节）" not in str(old_time):
+        df.at[idx, "避免排课时间"] = (
+            str(old_time).strip()
+            + ";全周（1-2节）"
+        )
+
+df.to_excel(file_path, index=False)
+
+print(f"处理完成，共修改 {sport_mask.sum()} 条体育课程")
+
+
+# # 去掉第二行英文表头
+# df = df.iloc[1:].copy()
+
+# df = df.drop_duplicates(subset=["教学班ID"])
+
+# def classify_course(course_name, course_type):
+
+#     course_name = str(course_name)
+#     course_type = str(course_type)
+
+#     # 体育
+#     if "体育" in course_name:
+#         return 1, "体育类"
+
+#     # 英语
+#     if "英语" in course_name:
+#         return 2, "英语类"
+
+#     # 数学
+#     if any(x in course_name for x in [
+#         "高等数学",
+#         "线性代数",
+#         "概率论",
+#         "数学"
+#     ]):
+#         return 3, "数学类"
+
+#     # 思政
+#     if any(x in course_name for x in [
+#         "形势与政策",
+#         "中国近现代史纲要",
+#         "毛泽东思想",
+#         "习近平新时代中国特色社会主义思想概论",
+#         "马克思主义基本原理",
+#         "思想道德与法治"
+#     ]):
+#         return 4, "思政类"
+
+#     # 专业课
+#     if any(x in course_type for x in [
+#         "专业基础",
+#         "专业核心",
+#         "专业方向",
+#         "专业选修"
+#     ]):
+#         return 6, "专业课"
+
+#     # 其他公修课
+#     return 5, "公修课"
+
+
+# df[["类别ID", "类别名称"]] = df.apply(
+#     lambda row: pd.Series(
+#         classify_course(
+#             row["课程名称"],
+#             row["课程类别名称"]
+#         )
+#     ),
+#     axis=1
 # )
 
-# response = client.embeddings.create(
-#     model='Qwen/Qwen3-Embedding-0.6B', # ModelScope Model-Id, required
-#     input=['你好','世界'],
-#     encoding_format="float"
+# result = df[
+#     [
+#         "教学班ID",
+#         "课程名称",
+#         "课程类别名称",
+#         "类别ID",
+#         "类别名称"
+#     ]
+# ]
+
+# result.to_excel(
+#     output_file,
+#     index=False
 # )
 
-# #print(response.data)
-# embeddings_list = [item.embedding for item in response.data]
-# print(f"embedding_list[0]: {embeddings_list[0]}")
-# print(f"embedding_list[1]: {embeddings_list[1]}")
-
-# Requires transformers>=4.51.0
-# Requires sentence-transformers>=2.7.0
-import torch
-from sentence_transformers import SentenceTransformer
-from transformers import AutoModel, AutoTokenizer
-
-import os
-
-download_path = './my_models'
-os.makedirs(download_path, exist_ok=True)
-# 自动检测设备，选择 CUDA
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-# model_name = "Qwen/Qwen3-Embedding-0.6B"
-# model_tf = AutoModel.from_pretrained(model_name, 
-#     config={"attn_implementation": "flash_attention_2", "device_map": "auto"})
-# tokenizer_tf = AutoTokenizer.from_pretrained(model_name, padding_side="left",cache_folder=download_path)
+# print("完成，输出:", output_file)
 
 
-# 将模型和分词器传递给 SentenceTransformer
-# model = SentenceTransformer(
-#     "Qwen/Qwen3-Embedding-0.6B"
+# # 读取"推荐班级"列
+# class_col = df["推荐班级"].dropna()
+
+# # 提取并去重
+# class_set = set()
+
+# for text in class_col:
+#     # 按空格拆分
+#     classes = str(text).split()
+
+#     for cls in classes:
+#         cls = cls.strip()
+#         if cls:
+#             class_set.add(cls)
+
+# # 排序
+# class_list = sorted(class_set)
+
+# # 保存到新Excel
+# result = pd.DataFrame({
+#     "班级": class_list
+# })
+
+# result.to_excel("/Users/qingxia/Downloads/Python-projects/毕设/timetable/智能排课基础数据/提取的基础数据表_converted/班级表.xlsx", index=False)
+
+# print(f"提取到 {len(class_list)} 个班级")
+
+# 推荐班级列
+# df["推荐班级"] = (
+#     df["推荐班级"]
+#     .astype(str)
+#     .str.replace(";班级:", " ", regex=False)
+#     .str.replace("班级:", " ", regex=False)
+# )
+# 将“避免排课时间”为空（NaN、空字符串、纯空格）的单元格填充
+# df["避免排课时间"] = (
+#     df["避免排课时间"]
+#     .fillna("")
+#     .astype(str)
 # )
 
-# Load the model
-#model = SentenceTransformer("Qwen/Qwen3-Embedding-0.6B", cache_folder=download_path)
+# mask = df["避免排课时间"].str.strip() == ""
 
-# We recommend enabling flash_attention_2 for better acceleration and memory saving,
-# together with setting `padding_side` to "left":
-model = SentenceTransformer(
-    "Qwen/Qwen3-Embedding-0.6B",
-    cache_folder=download_path,
-    model_kwargs={"attn_implementation": "flash_attention_2"},
-    tokenizer_kwargs={"padding_side": "left"}
-)
+# df.loc[mask, "避免排课时间"] = "周二(5-8节）"
 
+# # 覆盖保存回原文件
+# # df.to_excel(file_path, index=False)
 
-# # 显式将模型转换为 float16
-model = model.to(device)#.half()  # 将模型转换为float16
-
-
-
-
-# The queries and documents to embed
-queries = [
-    "What is the capital of China?",
-    "Explain gravity",
-]
-documents = [
-    "The capital of China is Beijing.",
-    "Gravity is a force that attracts two bodies towards each other. It gives weight to physical objects and is responsible for the movement of planets around the sun.",
-]
-
-# Encode the queries and documents. Note that queries benefit from using a prompt
-# Here we use the prompt called "query" stored under `model.prompts`, but you can
-# also pass your own prompt via the `prompt` argument
-with torch.autocast(device_type='cuda', dtype=torch.float16):
-    query_embeddings = model.encode(queries, prompt_name="query", device='cuda')
-    document_embeddings = model.encode(documents, device='cuda')
-
-# Compute the (cosine) similarity between the query and document embeddings
-similarity = model.similarity(query_embeddings, document_embeddings)
-print(f"query_embeddings: {query_embeddings}")
-print(f"document_embeddings: {document_embeddings}")
-print(similarity)
-# tensor([[0.7646, 0.1414],
-#         [0.1355, 0.6000]])
+# df.to_excel("/Users/qingxia/Downloads/Python-projects/毕设/timetable/智能排课基础数据/提取的基础数据表_converted/课程表.xlsx", index=False)

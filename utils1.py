@@ -3,6 +3,7 @@ import pandas as pd
 import os
 from typing import Union, List, Dict
 from tryloadlimit import *
+import re
 
 
 def _has_non_empty(value) -> bool:
@@ -36,7 +37,7 @@ def pre_selection(courses, classrooms, course_type=None, department=None, campus
     valid_jxbids = [
         jxb.JXBID 
         for jxb in courses 
-        if jxb.SFXYPK == '1' and jxb.SFXYJAS == '1' and jxb.RWJSZCDM != None and 
+        if jxb.SFXYPK == 1 and jxb.SFXYJAS == 1 and jxb.RWJSZCDM != None and 
             jxb.KCLB != None and jxb.SKXQ != None and jxb.SKZCDM != None and jxb.SKZCDM != '0000000000000000' and jxb.ZXS != None and 0 < jxb.ZXS <= 8 and
             (course_type is None or jxb.KCLB == course_type) and  # 根据课程类别筛选
             (department is None or jxb.YXMC == department) and    # 根据开课单位筛选
@@ -47,14 +48,14 @@ def pre_selection(courses, classrooms, course_type=None, department=None, campus
     valid_jasdms = [
         classroom.JASDM 
         for classroom in classrooms 
-        if classroom.SFYXPK == '1'
+        if classroom.SFYXPK == 1
     ] # 列表保留顺序
 
     # 筛选有效教室的对象（允许排课）
     valid_classrooms = [
         classroom 
         for classroom in classrooms 
-        if classroom.SFYXPK == '1'
+        if classroom.SFYXPK == 1
     ] # 列表保留顺序
 
     # 去重
@@ -347,7 +348,12 @@ def get_class_instances1(course, classes: list, all_courses: list) -> list:
     if not class_names_str or pd.isna(class_names_str): #如果是空值
         return []
     # 拆分班级名称
-    class_names = [name.strip() for name in class_names_str.split(',') if name.strip()]
+    # class_names = [name.strip() for name in class_names_str.split(',') if name.strip()]
+    class_names = [
+        name.strip()
+        for name in re.split(r'[, ]+', class_names_str)
+        if name.strip()
+    ]
 
     # 先处理“当前数量 >= 8”这一条件
     if len(class_names) >= 8:
