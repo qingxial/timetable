@@ -1,4 +1,17 @@
+"""
+首轮排课主入口（直接运行：python test_for_school.py）。
 
+流程：按「筛选条件组合」分组 → 课程聚类分批 → 调用 utils1.schedule_one_round
+逐批排课 → 保存排课结果和时间表状态。
+
+输出：排课结果/排课结果_全部.xlsx、排课失败课程_全部.xlsx、saved_timetables.pkl
+
+放置策略（消融实验开关，详见 utils1.py 顶部说明）：
+  python test_for_school.py                      # first：原始方案（默认）
+  python test_for_school.py --strategy balanced  # 负载均衡放置
+  python test_for_school.py --strategy random    # GRASP 式随机放置
+"""
+import argparse
 from Basic_Data import *
 import os
 from utils1 import *
@@ -471,6 +484,14 @@ def save_final_results(all_scheduling_results, all_failed_courses, total_schedul
 
 def main():
     """主函数"""
+    parser = argparse.ArgumentParser(description="首轮贪心排课")
+    parser.add_argument("--strategy", choices=["first", "random", "balanced"], default="first",
+                        help="放置策略：first=原始（方案数最多教室的第一个时段）；"
+                             "random=GRASP式随机；balanced=负载均衡（消融实验用）")
+    parser.add_argument("--seed", type=int, default=2026, help="random/balanced 策略的随机种子")
+    args = parser.parse_args()
+    set_placement_strategy(args.strategy, args.seed)
+
     # 基础数据路径
     BASE_DIR = os.path.join(os.path.dirname(__file__), '智能排课基础数据', '提取的基础数据表_converted')
     course_excel = os.path.join(BASE_DIR, '课程表.xlsx')

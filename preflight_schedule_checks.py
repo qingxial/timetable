@@ -128,7 +128,7 @@ def collect_jxbids_for_preflight(
     courses, classrooms, combinations_path: Optional[str]
 ) -> Tuple[List[str], List]:
     """与正式排课范围对齐：按筛选条件组合并集；无组合文件时用 (None, None) 全局筛选。"""
-    list_of_jas = [c for c in classrooms if c.SFYXPK == "1"]
+    list_of_jas = [c for c in classrooms if str(c.SFYXPK).strip() in ("1", "1.0")]
     jxbids: set = set()
     if combinations_path and os.path.isfile(combinations_path):
         df = pd.read_excel(combinations_path)

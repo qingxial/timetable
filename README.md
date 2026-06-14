@@ -1,156 +1,155 @@
-# 高校智能排课项目
+# 高校智能排课系统（毕设）
 
-## 项目简介
+实现高校排课全流程：基础数据整理 → 排课要求文本解析 → 排课前检查（规则+LLM）→ 首轮排课 → 调课调整 → 失败归因（规则+LLM）→ 结果分析与可视化。
 
-该仓库实现了高校排课全流程的数据整理、需求解析、可行性检查、调度后分析和可视化。
+输入目录为 `智能排课基础数据/`，输出目录为 `排课结果/`。
 
-核心目标是：
+## 一键运行全流程
 
-- 将原始教学任务、选课课程、教室与教师资源整理成可排课的数据格式；
-- 从教师填写的排课要求中抽取结构化时间与地点约束；
-- 对排课前的数据合理性进行预检查；
-- 分析失败原因并辅助调课；
-- 生成排课结果与教室/教师利用率可视化报告。
-
-该项目以 `智能排课基础数据/` 为输入目录，以 `排课结果/` 为默认输出目录。
+```bash
+python run_pipeline.py              # 数据校验→检查→排课→调课→归因→可视化→报告
+python run_pipeline.py --no-llm     # 跳过两个 LLM 环节
+python run_pipeline.py --from-stage reschedule   # 已有首轮结果，从调课续跑
+python run_pipeline.py --list       # 查看全部环节
+```
 
 ## 目录结构
 
-- `course_schedule_pipeline.py`：构建待排课程表 pipeline Excel 的脚本。
-- `specialneeds.py`：从 `PKYQMS` 文本中抽取时间偏好、禁止时段、教学楼/教室约束；使用 LLM 生成结构化结果。
-- `preflight_schedule_checks.py`：排课前需求合理性检查，校验课程、教师、教室、班级数据是否符合排课条件。
-- `postfailure_analysis.py`：排课/调课失败原因分析与归因建议。
-- `llm_classroom_static_remediation.py`：当教室静态筛选无可行教室时，调用 LLM 给出可落地的修改建议。
-- `special_requirements_stats.py`：统计特殊需求课程的排课成功率并生成图表。
-- `scheduling_visualization.py`：生成教室、教师、班级利用率和其他可视化报表。
-- `utils_for_reschedule.py`：调课/排课结果加载、保存与时间表辅助函数。
-- `Basic_Data.py`：课程、教室、教师、班级数据模型与加载函数。
-- `course_clustering.py`：基于文本嵌入的课程聚类与相似度分析。
-- `reschedule_by_adjusting.py`：调课调整算法主实现；`reschedule_by_adjusting_oldversion.py` 为旧版本备份。
-- `原始excel处理.py`：原始 Excel 数据预处理脚本。
-- 其他测试/实验脚本：`test_new.py`、`test_old.py`、`1.py` 等。
+```
+timetable/
+├── 核心排课代码（必须保持在根目录同级，相互之间有 import 依赖）
+│   ├── Basic_Data.py                 数据模型与 Excel 加载（Course/Classroom/Teacher/Class）
+│   ├── tryloadlimit.py               时间约束文本解析、天-节次模式生成、时段可用性检查
+│   ├── utils1.py                     教室筛选、单班排课、整轮排课、结果导出
+│   ├── utils_for_reschedule.py       时间表 pkl 保存/加载/恢复、调课腾挪操作、利用率统计
+│   ├── reschedule_by_adjusting.py    调课算法主模块（可直接运行）
+│   └── test_for_school.py            ★ 首轮排课主入口（可直接运行）
+│
+├── 数据准备与需求解析
+│   ├── course_schedule_pipeline.py   构建待排课程表 pipeline Excel
+│   ├── specialneeds.py               LLM 解析排课要求文本(PKYQMS) → timelimit.xlsx
+│   ├── course_clustering.py          课程语义嵌入 + K-means 聚类（排课分批依据）
+│   └── llm_classroom_static_remediation.py  教室静态筛选无解时的 LLM 修改建议
+│
+├── 流程编排与 LLM 增强
+│   ├── run_pipeline.py               ★ 一键全流程入口
+│   ├── llm_api.py                    统一 LLM 客户端（DashScope 兼容模式）
+│   ├── llm_preflight_check.py        LLM 排课前合理性复核（规则版证据 → 语义推理）
+│   └── llm_failure_analysis.py       LLM 失败归因与调整建议（构成"归因—调整—重排"闭环）
+│
+├── 检查与分析
+│   ├── preflight_schedule_checks.py  排课前数据合理性检查（规则版）
+│   ├── postfailure_analysis.py       排课/调课失败原因归因分析（规则版）
+│   ├── special_requirements_stats.py 特殊需求课程排课成功率统计
+│   ├── scheduling_visualization.py   教室/教师/班级利用率等可视化图表
+│   ├── analysis_report.py            排课结果综合分析（图表）
+│   └── generate_report.py            生成 HTML 综合分析报告（注意：读取「排课结果 copy/」目录）
+│
+├── scripts/                          工具与一次性脚本
+│   ├── 补全教师表.py                  教师表按 JSH 去重 + 补全课程表中缺失教师（流水线 fix-teachers 环）
+│   ├── validate_converted_data.py    校验四张基础数据表格式；ZXS 异常课程自动导出待教务确认清单
+│   └── 补充体育课避免排课时间.py
+├── .claude/skills/data-convert/      数据转换 skill：任意新数据 → 四张标准表
+├── docs/                             设计笔记
+│   └── 地理位置需求解析策略（先RAG再召回）.md
+│
+├── 智能排课基础数据/                  ★ 输入数据（Excel），勿删
+│   └── 提取的基础数据表_converted/    当前排课使用的课程/教师/教室/班级四张表
+├── 排课结果/                          ★ 当前排课与调课输出（含 saved_timetables.pkl、
+│                                       reschedule_timetables.pkl、排课分析报告.html），勿删
+├── 排课结果1/                         ★ 历史一轮结果备份（含课程聚类结果、排课前检查报告），勿删
+└── 排课要求和基础数据_v1.0.xlsx       原始需求与基础数据汇总
+```
 
-## 关键数据文件
+## 核心代码依赖关系
 
-- `智能排课基础数据/课程表2025-2026-1_pipeline.xlsx`：pipeline 后用于后续需求解析与排课的数据表。
-- `智能排课基础数据/更新后的教室表.xlsx`：教室资源表，包含教室代码、教学楼、校区、容量、类型等字段。
-- `智能排课基础数据/更新后的教师名单2025-2026-1.xlsx`：教师信息。
-- `智能排课基础数据/班级汇总2025-2026-1.xlsx`：班级信息。
-- `智能排课基础数据/课程教室对照表.xlsx`：历史教室映射表。
-- `排课结果/`：默认排课和调课结果输出目录。
-- `排课结果/图表展示/`：可视化图表输出目录。
+```
+Basic_Data.py（数据模型，最底层）
+    ↑
+tryloadlimit.py ←→ utils1.py（互相导入，不可拆开）
+    ↑
+utils_for_reschedule.py（pkl 读写 + 调课工具）
+    ↑
+reschedule_by_adjusting.py（调课算法）
+    ↑
+test_for_school.py（首轮排课主入口）
+```
 
-## 安装依赖
+注意：核心模块之间使用 `from xxx import *` 的平铺导入，且 `utils1.py` 与
+`tryloadlimit.py` 循环依赖，**请勿将这些 .py 文件移入子目录**，否则会破坏导入。
+`reschedule_by_adjusting.py` 顶部用 `__file__` 定位数据目录，数据文件夹也需保持现有位置。
 
-推荐使用 Python 3.11+。
+## 完整运行流程
+
+推荐直接用 `python run_pipeline.py` 一键跑完。各环节也可单独执行：
 
 ```bash
+# 0. 安装依赖（推荐 Python 3.10+）
 pip install -r requirements.txt
-```
+# 可选：pip install sentence-transformers torch xlrd
 
-### 可选依赖
+# 1. 构建待排课程表
+python course_schedule_pipeline.py
 
-某些脚本需要额外依赖：
-
-```bash
-pip install openai sentence-transformers torch xlrd
-```
-
-## 环境变量
-
-- `DASHSCOPE_API_KEY`：`specialneeds.py` 读取 LLM API 密钥。
-- `DASHSCOPE_BASE_URL`：可选，LLM API 基础地址。
-- `DASHSCOPE_MODEL`：可选，LLM 模型名称，默认 `qwen3.5-35b-a3b`。
-- `OPENAI_API_KEY`：`llm_classroom_static_remediation.py` 及其它 OpenAI 接口调用时使用。
-- `OPENAI_BASE_URL`、`OPENAI_MODEL`：可选，OpenAI API 地址与模型。
-
-> 注意：`specialneeds.py` 当前由 `DASHSCOPE_API_KEY` 驱动，若未设置会抛出错误；建议在运行前配置好环境变量。
-
-## 主要使用说明
-
-### 1. 构建课程排课 pipeline
-
-```bash
-python course_schedule_pipeline.py --output ./智能排课基础数据/课程表2025-2026-1_pipeline.xlsx
-```
-
-如果不传入参数，脚本会使用默认路径下的原始文件。
-
-### 2. 解析特殊需求文本
-
-```bash
+# 2. LLM 解析排课要求文本（需配置 DASHSCOPE_API_KEY）
 python specialneeds.py --input ./智能排课基础数据/课程表2025-2026-1_pipeline.xlsx \
   --classroom ./智能排课基础数据/更新后的教室表.xlsx \
   --output ./智能排课基础数据/timelimit.xlsx
-```
 
-#### 常用参数
+# 3. 数据格式校验 + 排课前检查（规则版 + LLM 版）
+python scripts/validate_converted_data.py
+python llm_preflight_check.py          # 内部会先跑规则版并落盘对照报告
+python llm_preflight_check.py --dry-run --max-courses 10   # 调试：只看送给 LLM 的证据包
 
-- `--max-rows 100`：只处理前 100 行数据，适合调试与节省资源。
-- `--sample-texts`：打印前 30 个非空 `PKYQMS` 文本并退出。
+# 4. 首轮排课（输出 排课结果/排课结果_全部.xlsx、saved_timetables.pkl 等）
+python test_for_school.py
+# 放置策略消融开关（默认 first=原始方案；详见 docs/排课放置策略调研与设计.md）：
+python test_for_school.py --strategy balanced   # 负载均衡放置（时段均衡+教室容量贴合）
+python test_for_school.py --strategy random     # GRASP 式随机放置（去倾向性基线）
 
-如果当前行的 `PKYQMS` 为空，`specialneeds.py` 会跳过 LLM 调用，直接写入空结果；这有助于节省 API 资源。
+# 5. 调课调整（输出 排课结果/调课后的整体结果.xlsx、reschedule_timetables.pkl 等）
+python reschedule_by_adjusting.py
 
-### 3. 排课前合理性检查
+# 6. 失败归因（规则版 + LLM 版，LLM 版内部会先跑规则版）
+python llm_failure_analysis.py
+python llm_failure_analysis.py --max-courses 5 --dry-run    # 调试
 
-```bash
-python preflight_schedule_checks.py --root 智能排课基础数据 --output 排课结果/排课前检查报告.xlsx
-```
-
-常用参数：
-
-- `--course`：课程表文件
-- `--teacher`：教师表文件
-- `--classroom`：教室表文件
-- `--banji`：班级表文件
-- `--weeks`、`--days`、`--periods`：时间表维度
-- `--combinations`：筛选条件组合文件
-
-### 4. 调课与失败分析
-
-- `postfailure_analysis.py`：分析失败原因并输出建议。
-- `reschedule_by_adjusting.py`：调课算法与调整策略实现。
-- `utils_for_reschedule.py`：保存、加载排课/调课时的 `pkl` 对象。
-
-### 5. 特殊需求统计
-
-```bash
+# 7. 统计 / 可视化 / 报告
 python special_requirements_stats.py --no-show
-```
-
-该脚本统计带有特殊要求的教学班是否已成功排课，并生成统计图表。
-
-### 6. 可视化结果
-
-```bash
 python scheduling_visualization.py all --charts-subdir 图表展示
+python analysis_report.py
 ```
 
-可生成教室利用率、教师利用率、时间段负载等图表，输出到 `排课结果/图表展示/`。
+所有脚本都需在**项目根目录**下运行（相对路径以根目录为基准）。
 
-### 7. LLM 辅助教室 remediation
+## 关键输出文件（中期汇报素材）
 
-```bash
-python llm_classroom_static_remediation.py
-```
+| 文件 | 说明 |
+|---|---|
+| `排课结果/排课结果_全部.xlsx` | 首轮排课成功的全部教学班 |
+| `排课结果/排课失败课程_全部.xlsx` | 首轮排课失败的教学班 |
+| `排课结果/调课后的整体结果.xlsx` | 调课后的最终整体结果 |
+| `排课结果/失败课程归因与建议.xlsx` | 失败原因归因分析 |
+| `排课结果/saved_timetables.pkl` | 首轮排课后的时间表状态（教师/教室/班级占用矩阵） |
+| `排课结果/reschedule_timetables.pkl` | 调课后的时间表状态 |
+| `排课结果/排课分析报告.html` | HTML 综合分析报告 |
+| `排课结果/图表展示/` | 可视化图表 |
+| `排课结果1/课程聚类结果2.xlsx` | 课程聚类结果（analysis_report.py 仍引用此处） |
+| `排课结果/排课前检查报告.xlsx` | 规则版排课前检查 |
+| `排课结果/LLM排课前检查报告.xlsx` | LLM 排课前合理性复核（风险等级/隐性矛盾/建议） |
+| `排课结果/LLM失败归因与建议.xlsx` | LLM 失败归因（主因分类/自然语言解释/分条建议） |
+| `排课结果/llm_preflight_raw.json`、`llm_failure_raw.json` | LLM 原始输入输出留档（论文消融实验复现用） |
+| `排课结果/周学时异常课程_待教务确认.xlsx` | ZXS 不在 (0,8] 的课程全字段清单（这些课被排课程序静默跳过，需教务逐条确认处理方式） |
 
-该脚本用于当严格条件下无可用教室时，分析当前课程行并给出可行的修改建议。
+## 环境变量
 
-## 其他说明
+- `DASHSCOPE_API_KEY` / `DASHSCOPE_BASE_URL` / `DASHSCOPE_MODEL`：`specialneeds.py`、`llm_api.py`
+  （即 LLM 排课前检查与失败归因）使用；未设置时 `llm_api.py` 回退到 `specialneeds.py` 中的配置
+- `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL`：`llm_classroom_static_remediation.py` 使用
 
-- `Basic_Data.py` 提供了课程、教室、教师、班级模型及 Excel 读取器。
-- `utils_for_reschedule.py` 负责调课结果的读写与备份恢复。
-- `course_clustering.py` 通过文本嵌入做课程聚类与语义分析，需额外安装 `sentence-transformers` 和 `torch`。
-- `原始excel处理.py` 用于原始 Excel 数据的预处理与清洗。
+## 已知事项
 
-## 运行建议
-
-1. 准备 `智能排课基础数据/` 下的原始输入文件；
-2. 先运行 `course_schedule_pipeline.py` 生成 pipeline 数据；
-3. 用 `specialneeds.py` 解析 `PKYQMS` 生成时间/地点约束；
-4. 运行 `preflight_schedule_checks.py` 做排课前检查；
-5. 完成调度后，用 `special_requirements_stats.py` 和 `scheduling_visualization.py` 生成分析结果。
-
-## 版权与备注
-
-本仓库为高校排课研究与项目实现，适用于课程需求解析、教室资源匹配与调度分析。请根据实际数据路径与机构规范调整脚本参数。
+- `generate_report.py` 读取的 `排课结果 copy/` 目录当前不存在，运行前需准备该目录
+  或将 `DATA_DIR` 改为 `排课结果/`；`analysis_report.py` 直接读取 `排课结果/`，可正常使用。
+- 旧入口 `test_new.py`、临时脚本 `1.py`、运行日志 `log.txt`/`log2.txt` 已删除，
+  如需找回可用 `git checkout a7c4aab -- <文件名>` 从 git 历史恢复。

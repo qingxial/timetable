@@ -5,6 +5,8 @@ my_models/
 排课结果/
 排课结果 copy/
 排课结果1/
+排课结果2/
+排课要求和基础数据_v1.0.xlsx
 
 # IDE & tools
 .venv/
@@ -21,7 +23,12 @@ __pycache__/
 
 # Logs and caches
 *.log
+log*.txt
+logs/
 .cache/
+
+# Office 临时锁文件
+~$*
 
 # macOS
 .DS_Store

@@ -1,3 +1,9 @@
+"""
+排课要求文本（PKYQMS 列）解析模块（直接运行，需配置 DASHSCOPE_API_KEY）。
+
+调用 LLM 从教师填写的自由文本中抽取结构化约束：
+时间偏好、禁止时段、教学楼/教室要求等，输出到 智能排课基础数据/timelimit.xlsx。
+"""
 import argparse
 import json
 import os

@@ -1,4 +1,14 @@
+"""
+排课时间约束解析与时段可用性检查模块。
 
+主要内容：
+  - parse_cell_to_struct / build_preferences：把「指定/避免排课时间」的中文文本
+    解析成结构化的时间约束（周次、星期、节次）
+  - new_generate_day_patterns：根据周学时和时间约束生成可行的“天-节次”组合模式
+  - new_check_period_availability / new_only_time：检查教师、班级、教室在候选时段是否可用
+
+注意：与 utils1.py 互相导入，两个文件需保持在同一目录。
+"""
 import reschedule_by_adjusting
 import os
 from typing import List, Dict, Any, Tuple

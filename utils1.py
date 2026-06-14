@@ -1,9 +1,106 @@
+"""
+排课核心工具函数库。
 
+主要内容：
+  - pre_selection / filter_suitable_classrooms：教室静态筛选（课程类型、院系、校区、容量等）
+  - schedule_class：单个教学班的排课（找可行教室 + 时段并写入时间表）
+  - schedule_one_round：对一批教学班执行一轮排课
+  - save_scheduling_results：排课结果导出 Excel
+
+注意：与 tryloadlimit.py 互相导入，两个文件需保持在同一目录。
+"""
 import pandas as pd
 import os
+import random
 from typing import Union, List, Dict
 from tryloadlimit import *
 import re
+
+
+# ===== 放置策略（消融实验开关）=====================================================
+# schedule_one_round 选出最受约束(MCF)课程后，schedule_class 如何为它挑教室和时段：
+#   first    原始方案：方案数最多的教室 + 其第一个可行时段。
+#            缺点：时段枚举从周一第1节开始，课程系统性堆向周初早间；教室偏向大而灵活的教室。
+#   random   GRASP 式随机化贪心（Feo & Resende 1995）：在全部可行 (教室,时段) 组合中
+#            等概率随机选一个。纯去倾向性基线，不带质量导向。
+#   balanced 负载均衡放置：优先全局占用率最低的时段（缓解周初堆积，为后续受约束课程
+#            保留热门时段，近似 Least-Constraining Value 思想）+ 容量最贴合的教室
+#            （best-fit，避免小课占大教室）。
+# 切换方式：utils1.set_placement_strategy("balanced", seed=2026)
+#           或命令行 python test_for_school.py --strategy balanced
+PLACEMENT_STRATEGY = "first"
+_PLACEMENT_RNG = random.Random(2026)
+BALANCED_W_SLOT = 0.6      # balanced：「时段全局占用率」权重
+BALANCED_W_ROOMFIT = 0.25  # balanced：「教室容量浪费率」权重
+BALANCED_W_EVENING = 0.35  # balanced：「晚间时段惩罚」权重（first vs random 实验显示，
+                           # 纯均匀化会把 21.8% 课时推到晚间；此项把课优先留在日间，
+                           # 仅当日间占用率很高时才用晚间。软先验：只影响候选排序，
+                           # 若某课可行方案全在晚间仍会正常排晚间）
+EVENING_PERIOD_START = 8   # 0-based：第 9 节及以后算晚间（9-11 节）
+
+
+def set_placement_strategy(strategy: str = "first", seed: int = 2026):
+    """设置放置策略与随机种子（种子固定保证消融实验可复现）。"""
+    global PLACEMENT_STRATEGY, _PLACEMENT_RNG
+    if strategy not in ("first", "random", "balanced"):
+        raise ValueError(f"未知放置策略: {strategy}（可选 first / random / balanced）")
+    PLACEMENT_STRATEGY = strategy
+    _PLACEMENT_RNG = random.Random(seed)
+    print(f"[放置策略] {strategy} (seed={seed})")
+
+
+def _select_balanced(candidates, all_rooms, krl, teaching_weeks):
+    """balanced 策略：从全部可行 (教室, 时段方案) 中选综合得分最低者。
+
+    得分 = BALANCED_W_SLOT × 时段全局占用率 + BALANCED_W_ROOMFIT × 教室容量浪费率
+           + BALANCED_W_EVENING × 晚间节次占比
+      - 时段全局占用率：方案覆盖的 (天,节) 单元在全体可排教室、本课教学周内的平均
+        占用比例。把课推向当前最空闲的时段，既消除"第一个可行时段"的周初早间倾向，
+        也为后续偏好受限的课程保留竞争激烈的时段；
+      - 容量浪费率：(座位数-课容量)/座位数，倾向容量刚好够用的教室（best-fit）；
+      - 晚间节次占比：方案覆盖单元中第 EVENING_PERIOD_START+1 节及以后的比例。
+        均匀 ≠ 可取——晚间天然空闲，纯负载均衡会把课堆向晚间（random 实验中晚间
+        占比 8.7%→21.8%），此项作为作息友好先验，仅当日间占用率很高时才让位晚间；
+      - 平分时用带种子的微小随机量打破，避免形成新的固定倾向。
+    """
+    import numpy as np  # noqa: F401  室时间表本身是 numpy 数组
+
+    weeks_idx = sorted(teaching_weeks) if teaching_weeks else None
+    load = None
+    for room in all_rooms:
+        occ = (room.timetable != "")
+        occ = occ[weeks_idx].sum(axis=0) if weeks_idx else occ.sum(axis=0)
+        load = occ.astype(float) if load is None else load + occ
+    n_weeks = len(weeks_idx) if weeks_idx else all_rooms[0].timetable.shape[0]
+    load = load / max(n_weeks * len(all_rooms), 1)  # (day, period) 占用比例 ∈ [0,1]
+
+    try:
+        krl_f = float(krl or 0)
+    except (TypeError, ValueError):
+        krl_f = 0.0
+
+    best, best_score = None, float("inf")
+    for room, arrangement in candidates:
+        cells = [(d, p) for d, start, hours in arrangement for p in range(start, start + hours)]
+        slot_load = sum(load[d, p] for d, p in cells) / max(len(cells), 1)
+        evening_frac = sum(1 for _, p in cells if p >= EVENING_PERIOD_START) / max(len(cells), 1)
+        try:
+            cap = float(getattr(room, "SKZWS", 0) or 0)
+        except (TypeError, ValueError):
+            cap = 0.0
+        if cap <= 0:
+            waste = 1.0
+        elif cap > krl_f > 0:
+            waste = (cap - krl_f) / cap
+        else:
+            waste = 0.0
+        score = (BALANCED_W_SLOT * slot_load + BALANCED_W_ROOMFIT * waste
+                 + BALANCED_W_EVENING * evening_frac
+                 + _PLACEMENT_RNG.random() * 1e-9)
+        if score < best_score:
+            best_score, best = score, (room, arrangement)
+    return best
+# =================================================================================
 
 
 def _has_non_empty(value) -> bool:
@@ -48,14 +145,14 @@ def pre_selection(courses, classrooms, course_type=None, department=None, campus
     valid_jasdms = [
         classroom.JASDM 
         for classroom in classrooms 
-        if classroom.SFYXPK == 1
+        if str(classroom.SFYXPK).strip() in ("1", "1.0")  # 兼容数字/文本两种存法
     ] # 列表保留顺序
 
     # 筛选有效教室的对象（允许排课）
     valid_classrooms = [
         classroom 
         for classroom in classrooms 
-        if classroom.SFYXPK == 1
+        if str(classroom.SFYXPK).strip() in ("1", "1.0")  # 兼容数字/文本两种存法
     ] # 列表保留顺序
 
     # 去重
@@ -430,10 +527,11 @@ def schedule_class(jxbid, courses, teachers, classes, classrooms, flag_reschedul
         print(f"错误：未找到适合教学班 {jxbid} 的教室")
         return None, None, None
     
-    # 找出最优教室和方案
+    # 找出教室和方案（策略可切换：first / random / balanced，见模块顶部说明）
     best_classroom = None
     selected_arrangement = None
     max_arrangements = -1
+    all_candidates = []  # random/balanced 策略用：全部可行的 (教室, 时段方案) 组合
 
     for classroom in suitable_classrooms:
         # 计算当前教室的排课方案
@@ -443,14 +541,27 @@ def schedule_class(jxbid, courses, teachers, classes, classrooms, flag_reschedul
             arrangements = new_check_period_availability(
                 days_list, hours_list, classroom, teacher_week_map, list_of_classes, teaching_weeks,time_constraints)
             current_arrangements.extend(arrangements)
-        
-        # 如果找到更多方案的教室，更新记录
-        if len(current_arrangements) > max_arrangements:
-            max_arrangements = len(current_arrangements)
-            best_classroom = classroom
-            # 记录第一个可行方案，避免后续重复计算
-            selected_arrangement = current_arrangements[0] if current_arrangements else None
-    
+
+        if PLACEMENT_STRATEGY == "first":
+            # 原始方案：方案数最多的教室 + 其第一个可行时段
+            if len(current_arrangements) > max_arrangements:
+                max_arrangements = len(current_arrangements)
+                best_classroom = classroom
+                # 记录第一个可行方案，避免后续重复计算
+                selected_arrangement = current_arrangements[0] if current_arrangements else None
+        else:
+            max_arrangements = max(max_arrangements, len(current_arrangements))
+            if best_classroom is None:
+                best_classroom = classroom  # 与原始行为一致：无可行方案时也返回首个教室
+            all_candidates.extend((classroom, arr) for arr in current_arrangements)
+
+    if PLACEMENT_STRATEGY != "first" and all_candidates:
+        if PLACEMENT_STRATEGY == "random":
+            best_classroom, selected_arrangement = _PLACEMENT_RNG.choice(all_candidates)
+        else:  # balanced
+            best_classroom, selected_arrangement = _select_balanced(
+                all_candidates, classrooms, jxbs[0].KRL, teaching_weeks)
+
     # 检查是否找到可行的教室和方案
     if max_arrangements <= 0 or not best_classroom:
         print(f"错误：教学班 {jxbid} 没有可行的排课方案")

@@ -1,4 +1,14 @@
 """
+排课/调课结果的持久化与统计模块。
+
+主要内容：
+  - save_timetables / load_timetables / restore_timetables：
+    时间表状态（教师、教室、班级占用矩阵）以 pkl 形式保存与恢复
+    （对应 排课结果/saved_timetables.pkl 和 reschedule_timetables.pkl）
+  - rebuild_timetables_from_scheduled_courses：从排课结果 Excel 重建时间表
+  - select_candidates / clear_placement / place_placement：调课时的候选腾挪操作
+  - compute_class_usage_rates / compute_classroom_usage_rates_new：班级/教室利用率统计
+
 Author: Li Qingxia
 """
 from Basic_Data import *
@@ -300,7 +310,7 @@ def rebuild_timetables_from_scheduled_courses(scheduled_df, teachers, classrooms
 
                 # 尝试找到一个合适的 替代教室
                 for room in classrooms:
-                    if (campus is None or room.MC == campus) and room.SFYXPK == '1':
+                    if (campus is None or room.MC == campus) and str(room.SFYXPK).strip() in ('1', '1.0'):
                         classroom = room
                         print(
                             f"注意：未找到原教室 {classroom_code}，为课程 {jxbid} ({course_name}) 分配替代教室 {room.JASDM} ({room.JASMC})")
@@ -404,7 +414,7 @@ def compute_classroom_usage_rates_old(total_weeks, days_of_week, periods_per_day
         campus = getattr(classroom, 'MC', '')
         capacity = getattr(classroom, 'SKZWS', '')
 
-        if IFcoulduse=='0':
+        if str(IFcoulduse).strip() in ('0', '0.0'):
             continue
 
         for w in range(total_weeks):
@@ -1005,7 +1015,7 @@ def compute_classroom_usage_rates_new(
 
     for classroom in classrooms:
         IFcoulduse = getattr(classroom, 'SFYXPK', '0')
-        if IFcoulduse == '0':
+        if str(IFcoulduse).strip() in ('0', '0.0'):
             continue  # 不允许排课跳过
 
         code = getattr(classroom, 'JASDM', '')

@@ -1,3 +1,14 @@
+"""
+调课算法主模块（直接运行：python reschedule_by_adjusting.py）。
+
+对首轮排课失败的教学班，通过腾挪已排课程寻找可行的时段和教室：
+  - re_with_match_courses_new / re_with_match_courses_betchs_new：单班/批量调课匹配
+  - reschedule：调课主流程入口
+  - 模块顶部定义了基础数据和排课结果的默认文件路径
+
+输入：排课结果/排课失败课程_全部.xlsx、saved_timetables.pkl
+输出：排课结果/全部调整结果.xlsx、调课后的整体结果.xlsx、reschedule_timetables.pkl 等
+"""
 from Basic_Data import *
 from utils1 import *
 import pickle  # 添加pickle模块用于序列化和反序列化

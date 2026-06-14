@@ -1,3 +1,10 @@
+"""
+基础数据模型与加载模块（项目最底层，被几乎所有模块依赖）。
+
+定义 Course / Classroom / Teacher / Class 四个数据类，
+以及对应的 load_courses / load_classrooms / load_teachers / load_classes
+函数，从「智能排课基础数据」目录下的 Excel 表读取数据。
+"""
 from dataclasses import dataclass, field
 from typing import Optional
 from openpyxl import load_workbook

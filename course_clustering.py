@@ -312,7 +312,7 @@ def build_course_text(jxbid: str, courses: List[Course]) -> str:
             teachers.append(str_teacher)
     
     if teachers:
-        parts.append(f"任课教师信息:{"，".join(teachers)}")
+        parts.append(f"任课教师信息:{'，'.join(teachers)}")
     
     return "；".join(parts)
     
