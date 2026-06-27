@@ -57,7 +57,12 @@ class Course:
     # 当前是否已成功占用时间表（用于调课时只在「已排上」的课程中选匹配对象）
     IF_scheduled: bool = False
 
-    timetable: np.ndarray = field(init=False)  
+    # 虚班拆分（Issue #14）：奇数 ZXS 拆 @W/@B 两条记录，paired_jxbid 指向另一条
+    paired_jxbid: Optional[str] = None
+
+    timetable: np.ndarray = field(init=False)
+    # 已排上的星期集合（用于 LCV "避同天" 软约束查询，O(1) 命中）
+    scheduled_days: set = field(init=False)
 
     def __post_init__(self):
         # 初始化全空字符串的三维数组
@@ -66,6 +71,7 @@ class Course:
             fill_value="",  # 默认空字符串表示未安排
             dtype='U20'     # 支持最多20个Unicode字符
         )
+        self.scheduled_days = set()
 
 
 def load_courses(
@@ -86,20 +92,41 @@ def load_courses(
     course_params = inspect.signature(Course.__init__).parameters.keys()
     course_params = [p for p in course_params if p != 'self']
     
+    # 数值字段：openpyxl 读出的可能是 str/int/float 混杂，统一转为 float（避免下游算术报错）
+    NUMERIC_FIELDS = {"ZXS", "KRL"}
+
     courses = []
     for row_num in range(3, ws.max_row + 1):
         # 只收集Course类支持的参数
         course_data = {}
         for col_num, header in enumerate(headers):
             if header in course_params:
-                course_data[header]= ws.cell(row=row_num, column=col_num+1).value
-                # raw_val = ws.cell(row=row_num, column=col_num+1).value
-                # course_data[header] = normalize_empty(raw_val)
-        
+                raw = ws.cell(row=row_num, column=col_num+1).value
+                if header in NUMERIC_FIELDS and raw not in (None, ''):
+                    try:
+                        raw = float(raw)
+                    except (TypeError, ValueError):
+                        pass  # 保留原值，由下游容错处理
+                course_data[header] = raw
+
         # 添加固定参数
         course_data.update(weeks=weeks, days=days, periods=periods)
         courses.append(Course(**course_data))
-    
+
+    # 虚班拆分（Issue #14）：填充 paired_jxbid
+    # JXBID 形如 "原ID@W" / "原ID@B" 的，把同 base 的两条互相挂指针
+    _by_base = {}
+    for c in courses:
+        jx = str(c.JXBID or "")
+        if "@" in jx:
+            base, suffix = jx.rsplit("@", 1)
+            if suffix in ("W", "B"):
+                _by_base.setdefault(base, []).append(c)
+    for base, group in _by_base.items():
+        if len(group) == 2:
+            group[0].paired_jxbid = group[1].JXBID
+            group[1].paired_jxbid = group[0].JXBID
+
     return courses
 
 

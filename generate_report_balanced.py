@@ -14,7 +14,7 @@ matplotlib.rcParams['font.sans-serif'] = ['PingFang SC', 'Heiti TC', 'STHeiti', 
 matplotlib.rcParams['axes.unicode_minus'] = False
 matplotlib.rcParams['figure.dpi'] = 150
 
-DATA_DIR = "排课结果 copy/"
+DATA_DIR = "排课结果/"   # balanced 新结果（2026-06-15，98.09% / 89 失败）
 OUTPUT_DIR = DATA_DIR + "图表展示/"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -409,6 +409,19 @@ def check_violations_xinyongxin(row):
 xinxuan_viol = xinxuan[xinxuan.apply(check_violations_xinxuan, axis=1)]
 xinyongxin_viol = xinyongxin[xinyongxin.apply(check_violations_xinyongxin, axis=1)]
 
+# 特殊教师「约束执行情况」状态串（动态，随新数据更新）
+def _teacher_status(teacher_df, viol_df):
+    vc = teacher_df['星期'].value_counts().reindex(WEEKDAYS).dropna()
+    dist = '、'.join(f'{d}{int(c)}班' for d, c in vc.items() if c > 0)
+    if len(viol_df) == 0:
+        return 'tag-ok', '✓ 全部满足', f'（排课分布：{dist}）'
+    detail = '、'.join(f'{r["星期"]}{r["节次"]}' for _, r in viol_df.iterrows())
+    return ('tag-warn', '基本满足',
+            f'（排课分布：{dist}；其中 {len(viol_df)} 班排在 {detail}，属其他情况）')
+
+xinxuan_tag, xinxuan_ok, xinxuan_note = _teacher_status(xinxuan, xinxuan_viol)
+xinyongxin_tag, xinyongxin_ok, xinyongxin_note = _teacher_status(xinyongxin, xinyongxin_viol)
+
 fig, axes = plt.subplots(2, 2, figsize=(14, 9))
 fig.suptitle('特殊约束教师排课情况', fontsize=14, fontweight='bold')
 
@@ -444,13 +457,13 @@ plt.savefig(OUTPUT_DIR + 'special_teacher_schedule.png', dpi=150, bbox_inches='t
 plt.close()
 print("图9已保存")
 
-# ===== 图10: 87门失败课程分析（用L列归因） =====
-L_COL = 'Unnamed: 11'
-# 合并归因："没有满足条件的教室"与"校区/容量/类型/指定教室导致无任何候选教室"本质相同，统一归为一类
+# ===== 图10: 失败课程分析（规则版归因，用「原因类别」列） =====
+L_COL = '原因类别'   # 规则版 postfailure_analysis.py 输出的归因类别列
+# 规则版三类归因 → 展示用更直白的标签
 label_map = {
-    '原始数据没写主讲教师': '原始数据缺少主讲教师',
-    '没有满足条件的教室': '无满足条件的教室\n（校区/容量/类型约束）',
-    '校区/容量/类型/指定教室导致无任何候选教室': '无满足条件的教室\n（校区/容量/类型约束）',
+    '教室静态不可行': '无满足条件的教室\n（校区/容量/类型约束）',
+    '教师匹配或任务周次': '教师匹配/任务周次\n（教师信息缺失或周次不符）',
+    '资源冲突或偏好过窄': '资源冲突或偏好过窄\n（时间窗/偏好过严）',
 }
 fail87['归因'] = fail87[L_COL].apply(lambda x: label_map.get(str(x).strip(), str(x).strip()) if pd.notna(x) else '未知')
 # 超长标签折行
@@ -464,7 +477,7 @@ l_counts = fail87['归因'].value_counts()
 name_counts = fail87['课程名称'].value_counts().head(10)
 
 fig, axes = plt.subplots(1, 3, figsize=(19, 6))
-fig.suptitle('87门排课失败课程归因分析（依据归因说明列）', fontsize=14, fontweight='bold')
+fig.suptitle(f'{len(fail87)}门排课失败课程归因分析（规则版归因·原因类别）', fontsize=14, fontweight='bold')
 
 # 左：归因饼图
 l_labels = [f'{wrap_label(k)}\n({v}门)' for k,v in l_counts.items()]
@@ -526,11 +539,73 @@ def img_tag2(filename, alt=''):
     b64 = img_to_b64(path)
     return f'<img src="data:image/png;base64,{b64}" alt="{alt}" style="width:49%;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,0.12);">'
 
-# 计算一些关键数字用于HTML（口径：已排唯一教学班+87失败=实际参与排课总数）
-total_attempted = len(df_name) + len(fail_name)   # 4583 + 87 = 4670
-final_fail = 87
-final_success_uniq = len(df_name)                  # 4583 唯一教学班
+# 计算关键数字用于HTML（口径：已排唯一教学班 + 最终失败 = 实际参与排课总数）
+total_attempted = len(df_name) + len(fail_name)   # balanced: 4581 + 89 = 4670
+final_fail = len(fail_name)                        # 动态：89
+final_success_uniq = len(df_name)                  # 动态：4581 唯一教学班
+
+# 涉及实体数（动态统计，避免写死旧run数字）
+import itertools as _it
+involved_teachers = int(df['教师号'].nunique()) if '教师号' in df.columns else 0
+involved_rooms = int(df['教室代码'].nunique()) if '教室代码' in df.columns else 547
+if '班级信息' in df.columns:
+    involved_classes = len(set(_it.chain.from_iterable(
+        str(x).split() for x in df['班级信息'].dropna())))
+else:
+    involved_classes = 0
+
+# 调课增益（动态，按「唯一教学班数」统计，避免多教师行重复计数）
+def _uniq_jxb(path):
+    """读清单并返回唯一教学班数；兼容 教学班ID / jxbid 列名。"""
+    d = pd.read_excel(path)
+    for col in ('教学班ID', 'JXBID', 'jxbid'):
+        if col in d.columns:
+            return int(d[col].nunique())
+    return len(d)
+try:
+    first_round_fail = _uniq_jxb(DATA_DIR + '排课失败课程_全部.xlsx')   # 首轮失败 = 540
+except Exception:
+    first_round_fail = final_fail
+_resched_succ = first_round_fail - final_fail                      # 调课成功 = first_round_fail - final_fail
+
+# 动态读取最新日志里的"调课总耗时"，避免写死
+import re as _re_t, glob as _glob_t
+reschedule_time_str = "若干分钟"
+_log_candidates = sorted(
+    _glob_t.glob('logs/*balanced*.log') + _glob_t.glob('logs/reschedule_run_*.log'),
+    key=lambda p: os.path.getmtime(p), reverse=True
+)
+for _lf in _log_candidates:
+    try:
+        with open(_lf, encoding='utf-8', errors='ignore') as _f:
+            for _line in _f:
+                _m = _re_t.search(r'调课总耗时[:：]\s*(\d+\s*分\s*[\d.]+\s*秒)', _line)
+                if _m:
+                    reschedule_time_str = _m.group(1).replace(' ', '')
+                    break
+        if reschedule_time_str != "若干分钟":
+            break
+    except Exception:
+        continue
+reschedule_rate = _resched_succ / first_round_fail * 100 if first_round_fail else 0.0
+first_round_success = total_attempted - first_round_fail           # 首轮成功 = 4670-540 = 4130
+first_round_rate = first_round_success / total_attempted * 100 if total_attempted else 0.0
 success_rate = final_success_uniq / total_attempted * 100
+
+# 座位（空间）利用率：动态读 room_space_util_detail.xlsx（scheduling_visualization 产物）
+space_mean = 0.0
+space_high = space_good = space_fair = space_low = space_ge50 = 0.0
+try:
+    _sp = pd.read_excel(OUTPUT_DIR + 'room_space_util_detail.xlsx')
+    space_mean = float(_sp['空间利用率(%)'].mean())
+    # 按「利用率等级」列统计，保证与报告内饼图/分布图一致
+    _lvl = _sp['利用率等级'].astype(str)
+    _n = max(len(_sp), 1)
+    _pct = lambda kw: float(_lvl.str.startswith(kw).mean() * 100)
+    space_high, space_good, space_fair, space_low = _pct('High'), _pct('Good'), _pct('Fair'), _pct('Low')
+    space_ge50 = space_high + space_good + space_fair
+except Exception as _e:
+    print('座位利用率明细读取失败，第8节将用占位值:', _e)
 
 # 间隔统计
 adj_cnt = int(gap_series[gap_series == 1].count())
@@ -538,6 +613,35 @@ total_gaps_cnt = len(gaps)
 
 # 体育违规统计
 sports_12_names = '、'.join(sports_12_courses) if sports_12_courses else '无'
+
+# ===== 第10节：失败归因 HTML（按规则版归因类别动态生成） =====
+_reason_suggest = {
+    '原始数据缺少主讲教师': '要求各院系完整填写所有教学班教师号；排课前增加数据预检，自动检测教师信息缺失。',
+    '无满足条件的教室\n（校区/容量/类型约束）': '补充专用场地（体育馆、琴房等）或适当放宽校区/教室类型限制；核查"指定教室"字段。',
+    '教师匹配/任务周次\n（教师信息缺失或周次不符）': '核对教师号 JSH，补全或对齐授课周次（RWJSZCDM 与 SKZCDM）；对承课量大的教师提前预警。',
+    '资源冲突或偏好过窄\n（时间窗/偏好过严）': '与教师协商放宽时间约束或调配师资；放宽过窄的时间偏好。',
+}
+_fail_items = []
+for _reason, _info in sorted(l_detail.items(), key=lambda kv: -kv[1]['count']):
+    _cnt = _info['count']
+    _pct = _cnt / max(len(fail87), 1) * 100
+    _top = '、'.join(f'{n}（{c}班）' for n, c in _info['courses'].head(4).items())
+    _sug = _reason_suggest.get(_reason, '核对相关数据字段并按建议调整。')
+    _reason_disp = _reason.replace('\n', '')
+    _fail_items.append(
+        f'<h3 style="margin-top:16px;">{_reason_disp}（{_cnt}门，占{_pct:.1f}%）</h3>'
+        f'<div class="fail-item type1"><strong>主要课程：</strong>{_top or "（散落多类课程）"}。</div>'
+        f'<div class="fail-item type2"><strong>解决建议：</strong>{_sug}</div>'
+    )
+fail_analysis_html = (
+    '<div class="fail-box"><h3>失败课程归因（规则版自动诊断）</h3>'
+    + ''.join(_fail_items) + '</div>'
+)
+# 综合分析一句话（动态）
+_cat_brief = '；'.join(f'{r.replace(chr(10),"")} {info["count"]}门' for r, info in
+                      sorted(l_detail.items(), key=lambda kv: -kv[1]['count']))
+fail_summary = (f'最终 {len(fail87)} 门失败课程经规则版自动归因，可分为：{_cat_brief}。'
+                f'其中教师/数据类问题可通过数据治理与师资调配缓解，教室硬约束类需补充专用场地资源。')
 
 html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -584,7 +688,7 @@ html = f"""<!DOCTYPE html>
 <body>
 <div class="page-header">
   <h1>排课结果综合分析报告</h1>
-  <p>2024–2025学年 · 基于调课后整体结果 · 生成时间：2025年</p>
+  <p>西安交通大学 · 2025–2026学年第一学期 · balanced 放置策略 · 基于调课后整体结果</p>
 </div>
 
 <div class="container">
@@ -608,19 +712,19 @@ html = f"""<!DOCTYPE html>
     <div class="lbl">最终排课成功率</div>
   </div>
   <div class="kpi-card" style="border-color:#4527A0;">
-    <div class="val" style="color:#4527A0;">1,486</div>
+    <div class="val" style="color:#4527A0;">{involved_teachers:,}</div>
     <div class="lbl">涉及教师数</div>
   </div>
   <div class="kpi-card" style="border-color:#00695C;">
-    <div class="val" style="color:#00695C;">547</div>
+    <div class="val" style="color:#00695C;">{involved_rooms}</div>
     <div class="lbl">涉及教室数</div>
   </div>
   <div class="kpi-card" style="border-color:#558B2F;">
-    <div class="val" style="color:#558B2F;">1,379</div>
+    <div class="val" style="color:#558B2F;">{involved_classes:,}</div>
     <div class="lbl">涉及班级数</div>
   </div>
   <div class="kpi-card" style="border-color:#AD1457;">
-    <div class="val" style="color:#AD1457;">86.5%</div>
+    <div class="val" style="color:#AD1457;">{reschedule_rate:.1f}%</div>
     <div class="lbl">调课补排成功率</div>
   </div>
 </div>
@@ -630,9 +734,9 @@ html = f"""<!DOCTYPE html>
   <h2><span class="num">0</span>排课流程概述</h2>
   <div class="chart-wrap">{img_tag('scheduling_overview_kpi.png', '排课总览')}</div>
   <div class="desc">
-    <p><strong>第一阶段（初次排课）：</strong>对5,224个教学班进行自动排课，耗时约3小时44分钟。初次成功4,579班（87.7%），失败645班（主要为体育专用场地不足、教师数据缺失等原因）。</p>
-    <p><strong>第二阶段（调课补排）：</strong>对645门失败课程，通过调整已排课程腾出资源，重新排课，耗时约12分52秒。成功补排558班（调课成功率86.5%），仍有87班无法解决。</p>
-    <p><strong>最终结果：</strong>实际参与排课 <strong>{total_attempted:,}</strong> 个教学班，最终成功排课 <strong>{final_success_uniq:,}</strong> 班，失败 <strong>87</strong> 班，整体成功率 <strong>{success_rate:.1f}%</strong>。</p>
+    <p><strong>第一阶段（首轮贪心排课·balanced 策略）：</strong>对 {total_attempted:,} 个教学班进行自动排课，首轮成功 <strong>{first_round_success:,}</strong> 班（{first_round_rate:.2f}%），失败 {first_round_fail} 班（主要为体育专用场地不足、教师数据缺失等原因）。</p>
+    <p><strong>第二阶段（变邻域调课补排）：</strong>对 {first_round_fail} 门失败课程，通过局部重调度腾出资源重新排课，耗时约 {reschedule_time_str}。成功补排 <strong>{_resched_succ}</strong> 班（调课成功率 {reschedule_rate:.1f}%），仍有 {final_fail} 班无法解决。</p>
+    <p><strong>最终结果：</strong>实际参与排课 <strong>{total_attempted:,}</strong> 个教学班，最终成功排课 <strong>{final_success_uniq:,}</strong> 班，失败 <strong>{final_fail}</strong> 班，整体成功率 <strong>{success_rate:.1f}%</strong>。</p>
   </div>
 </div>
 
@@ -641,11 +745,11 @@ html = f"""<!DOCTYPE html>
   <h2><span class="num">1</span>公修课与专业课排课成功率</h2>
   <div class="chart-wrap">{img_tag('pub_course_scheduling_rate.png', '公修课排课成功率')}</div>
   <div class="desc">
-    <p><strong>数据口径：</strong>成功率 = 调课后已排唯一教学班数 ÷ (已排 + 最终失败87班)，反映调课后的真实排课结果，各类合计共 {total_attempted:,} 个教学班。</p>
-    <p><strong>思政类全部成功：</strong>形势与政策（301班/100%）、中国近现代史纲要（46班/100%）、毛泽东思想概论（51班/100%）、习近平新时代思想（37班/100%）均实现 <span class="tag tag-ok">100%</span> 排课，充分体现"公修课优先"策略（排课要求1）。</p>
-    <p><strong>数学100%：</strong>共154班，全部排课成功。</p>
-    <p><strong>英语/外语97.9%：</strong>共381班，成功373班，失败8班（均为大学外语2，系特定校区无合适教室）。</p>
-    <p><strong>体育92.9%：</strong>共463班，成功430班，失败33班（详见第10节归因分析）。</p>
+    <p><strong>数据口径：</strong>成功率 = 调课后已排唯一教学班数 ÷ (已排 + 最终失败{final_fail}班)，反映调课后的真实排课结果，各类合计共 {total_attempted:,} 个教学班。</p>
+    <p><strong>思政类：</strong>形势与政策（{int(result.loc['形势与政策','总任务'])}班/{result.loc['形势与政策','成功率']:.0f}%）、中国近现代史纲要（{int(result.loc['中国近现代史纲要','总任务'])}班/{result.loc['中国近现代史纲要','成功率']:.0f}%）、毛泽东思想概论（{int(result.loc['毛泽东思想概论','总任务'])}班/{result.loc['毛泽东思想概论','成功率']:.0f}%）、习近平新时代思想（{int(result.loc['习近平新时代思想','总任务'])}班/{result.loc['习近平新时代思想','成功率']:.0f}%），充分体现"公修课优先"策略（排课要求1）。</p>
+    <p><strong>数学：</strong>共 {int(result.loc['数学','总任务'])} 班，成功 {int(result.loc['数学','已排'])} 班，成功率 {result.loc['数学','成功率']:.1f}%。</p>
+    <p><strong>英语/外语：</strong>共 {int(result.loc['英语/外语','总任务'])} 班，成功 {int(result.loc['英语/外语','已排'])} 班，失败 {int(result.loc['英语/外语','失败数'])} 班，成功率 {result.loc['英语/外语','成功率']:.1f}%。</p>
+    <p><strong>体育：</strong>共 {int(result.loc['体育','总任务'])} 班，成功 {int(result.loc['体育','已排'])} 班，失败 {int(result.loc['体育','失败数'])} 班，成功率 {result.loc['体育','成功率']:.1f}%（详见第10节归因分析）。</p>
     <p><strong>专业课98.6%：</strong>共{result.loc['专业课','总任务']}班，成功{result.loc['专业课','已排']}班，失败{int(result.loc['专业课','失败数'])}班。</p>
   </div>
 </div>
@@ -688,7 +792,7 @@ html = f"""<!DOCTYPE html>
   <h2><span class="num">5</span>连排时段分布</h2>
   <div class="chart-wrap">{img_tag('continuous_slot_distribution.png', '连排时段')}</div>
   <div class="desc">
-    <p><strong>半天连排（1-4节、5-8节）是主流：</strong>1-4节连排1,377班次居首，5-8节连排928班次居次，完全符合"正常排课都是2节联排、1-4节优于5-8节"的要求（排课要求4、12）。</p>
+    <p><strong>半天连排（1-4节、5-8节）是主流：</strong>1-4节连排 {int(slot_counts.get('1-4节',0)):,} 班次居首，5-8节连排 {int(slot_counts.get('5-8节',0)):,} 班次居次，完全符合"正常排课都是2节联排、1-4节优于5-8节"的要求（排课要求4、12）。</p>
     <p><strong>单次2节安排（1-2、3-4、5-6、7-8节）：</strong>各时段均存在，且满足优先级排序（1-2 &gt; 3-4，5-6 &gt; 7-8）。</p>
     <p><strong>晚上及其他：</strong>9-10节及以后安排共{int(slot_counts.get('9-10节',0)) + int(slot_counts.get('9节以后',0))}班次，主要为实验课、艺术课等特殊课程。</p>
   </div>
@@ -730,7 +834,7 @@ html = f"""<!DOCTYPE html>
     </div>
   </div>
   <div class="desc" style="margin-top:14px;">
-    <p><strong>座位利用率：</strong>平均值达 <strong>65.7%</strong>，说明教室选取与班级规模总体匹配良好（排课要求9）。其中 High（85–100%）占22.9%，Good（70–85%）占27.9%，Fair（50–70%）占28.3%，合计约79.1%的课程座位利用率在50%以上，资源分配较为合理；Low（0–50%）占20.8%，主要集中在小班专业课和人数较少的选修课，属正常现象。</p>
+    <p><strong>座位利用率：</strong>平均值达 <strong>{space_mean:.1f}%</strong>，说明教室选取与班级规模总体匹配良好（排课要求9）。其中 High（85–100%）占{space_high:.1f}%，Good（70–85%）占{space_good:.1f}%，Fair（50–70%）占{space_fair:.1f}%，合计约{space_ge50:.1f}%的课程座位利用率在50%以上，资源分配较为合理；Low（0–50%）占{space_low:.1f}%，主要集中在小班专业课和人数较少的选修课，属正常现象。</p>
   </div>
 </div>
 
@@ -744,57 +848,29 @@ html = f"""<!DOCTYPE html>
       <td>新旋</td><td>xkp01200395</td>
       <td>只能在周三、周四、周五下午（5-8节）排课</td>
       <td>{len(xinxuan)}班次</td>
-      <td><span class="tag tag-ok">✓ 全部满足</span>（其中1班排在周四9节，属其他情况）</td>
+      <td><span class="tag {xinxuan_tag}">{xinxuan_ok}</span>{xinxuan_note}</td>
     </tr>
     <tr>
       <td>新永新</td><td>xkp01050075</td>
       <td>不能在周一、周二和周五排课</td>
       <td>{len(xinyongxin)}班次</td>
-      <td><span class="tag tag-ok">✓ 全部满足</span>（全部安排在周三）</td>
+      <td><span class="tag {xinyongxin_tag}">{xinyongxin_ok}</span>{xinyongxin_note}</td>
     </tr>
   </table>
   <div class="desc" style="margin-top:14px;">
-    <p>两位教师的特殊时间约束均得到严格执行，排课系统成功识别并应用了个人时间约束（排课要求16、17）。</p>
+    <p>两位教师的特殊时间约束基本得到执行，排课系统成功识别并应用了个人时间约束（排课要求16、17）；个别"其他情况"班次见上表备注。</p>
   </div>
 </div>
 
 <!-- 10. 失败课程分析 -->
 <div class="section">
-  <h2><span class="num">10</span>最终87门失败课程归因分析</h2>
+  <h2><span class="num">10</span>最终{final_fail}门失败课程归因分析</h2>
   <div class="chart-wrap">{img_tag('failed_courses_analysis.png', '失败课程分析')}</div>
 
-  <div class="fail-box">
-    <h3>归因一：原始数据缺少主讲教师（33门，占37.9%）</h3>
-    <div class="fail-item type2">
-      <strong>归因依据：</strong>归因说明列标注"原始数据没写主讲教师"——教学班的教师号（JSH）字段在原始数据中为空，系统无法构建教师时间约束，导致无法完成排课。
-    </div>
-    <div class="fail-item type2">
-      <strong>涉及课程：</strong>
-      体育与健康4（17班）、体育与健康2（16班）。均为大规模公共体育课教学班，推测因体育教学部在提交排课数据时，部分教学班的主讲教师分配尚未确定，导致字段缺失。
-    </div>
-    <div class="fail-item type2">
-      <strong>解决建议：</strong>下次排课前，要求各院系完整填写所有教学班的教师号字段；系统在启动排课前增加数据预检步骤，自动检测并提示教师信息缺失的教学班。
-    </div>
-
-    <h3 style="margin-top:16px;">归因二：无满足条件的教室（35门，占40.2%）</h3>
-    <div class="fail-item type1">
-      <strong>归因依据：</strong>归因说明列中，"没有满足条件的教室"（32门）与"校区/容量/类型/指定教室导致无任何候选教室"（3门）实质相同——均指在满足课程对校区、容量、教室类型等约束条件后，系统中不存在任何候选教室，属资源硬约束不可行，合并统计共35门。
-    </div>
-    <div class="fail-item type1">
-      <strong>解决建议：</strong>针对专用场地（声乐练习室、体育专用馆等）不足的情况，补充场地资源或与校外合作；对外语、艺术鉴赏等课程，适当放宽校区或教室类型限制；在下次排课前核查"指定教室"字段是否填写有误。
-    </div>
-
-    <h3 style="margin-top:16px;">归因三：教师时间冲突（19门，占21.8%）</h3>
-    <div class="fail-item" style="border-color:#42A5F5;">
-      <strong>归因依据：</strong>归因说明列标注"该老师只能在周三周四周五下午排课，该老师的其他课程已经安排在周三周四周五下午了"——涉及新旋老师（xkp01200395）。该教师个人时间约束极为严格（仅周三/四/五下午可用），其承担的教学班课时总量已超出这一时间窗口的容量上限，导致剩余19班无法安排。
-    </div>
-    <div class="fail-item" style="border-color:#42A5F5;">
-      <strong>解决建议：</strong>与该教师协商适当放宽时间约束，或将部分教学班调配给其他教师承担；在排课前对"时间窗口有限且承课量大"的教师提前预警。
-    </div>
-  </div>
+  {fail_analysis_html}
 
   <div class="desc" style="margin-top:16px;">
-    <p><strong>综合分析：</strong>87门失败课程可归为三类根本原因：37.9%（33门）源于原始数据质量问题（教师信息缺失），通过数据治理可完全避免；21.8%（19门）源于单一教师时间窗口已满，可通过师资调配解决；40.2%（35门）属于教室资源硬约束，需从根本上补充专用场地。若解决前两类，失败率可从1.9%降至0.75%以内。</p>
+    <p><strong>综合分析：</strong>{fail_summary}</p>
   </div>
 </div>
 
@@ -806,7 +882,7 @@ html = f"""<!DOCTYPE html>
 </body>
 </html>"""
 
-html_path = DATA_DIR + '排课分析报告.html'
+html_path = DATA_DIR + '排课分析报告_西交大.html'
 with open(html_path, 'w', encoding='utf-8') as f:
     f.write(html)
 print(f"\nHTML报告已生成：{html_path}")

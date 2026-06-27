@@ -49,19 +49,30 @@ def load_clustering_results(clustering_file, list_of_jxbids):
         cluster_groups = {}
         matched_jxbids = set()  # 记录已匹配的教学班ID
         
+        # Issue #14：聚类文件里只有原 JXBID，但 list_of_jxbids 含 @W/@B 后缀。
+        # 建一个 base→all_variants 索引，匹配时把所有变体都加入同一聚类
+        from collections import defaultdict
+        base2variants = defaultdict(list)
+        for jx in list_of_jxbids_set:
+            base = str(jx).split("@", 1)[0]
+            base2variants[base].append(jx)
+
         for _, row in clustering_df.iterrows():
             jxbid = row['JXBID']
             cluster_name = row['类别名称']
             #cluster_id=row['类别ID']
             cluster_name = row['类别ID']
 
-            
-            # 只包含在筛选后的教学班中的聚类结果
-            if jxbid in list_of_jxbids_set:
+            # 匹配所有变体（原 JXBID 或带 @W/@B 后缀的虚班）
+            base = str(jxbid).split("@", 1)[0]
+            variants = base2variants.get(base, [])
+            if variants:
                 if cluster_name not in cluster_groups:
                     cluster_groups[cluster_name] = []
-                cluster_groups[cluster_name].append(jxbid)
-                matched_jxbids.add(jxbid)
+                for v in variants:
+                    if v not in matched_jxbids:
+                        cluster_groups[cluster_name].append(v)
+                        matched_jxbids.add(v)
         
         # 统计未匹配的教学班
         unmatched_jxbids = list_of_jxbids_set - matched_jxbids
@@ -96,7 +107,8 @@ def load_clustering_results(clustering_file, list_of_jxbids):
             cluster_groups = {'全部': list(list_of_jxbids)}
     
     # return cluster_groups
-    return dict(sorted(cluster_groups.items()))
+    # key=str：兼容聚类 ID 为 int 与 '未分类' 字符串混排
+    return dict(sorted(cluster_groups.items(), key=lambda kv: str(kv[0])))
 
 
 def record_failed_course(jxbid, courses, department, course_type, combination_failed, all_failed_courses):
@@ -492,10 +504,10 @@ def main():
     args = parser.parse_args()
     set_placement_strategy(args.strategy, args.seed)
 
-    # 基础数据路径
+    # 基础数据路径（4670 那套：converted 数据，2026-06-23 切回）
     BASE_DIR = os.path.join(os.path.dirname(__file__), '智能排课基础数据', '提取的基础数据表_converted')
-    course_excel = os.path.join(BASE_DIR, '课程表.xlsx')
-    classroom_excel =  os.path.join(BASE_DIR, '教室表.xlsx')
+    course_excel = os.path.join(BASE_DIR, '课程表_split.xlsx')   # Issue #14 拆奇数 ZXS 后的副本
+    classroom_excel = os.path.join(BASE_DIR, '教室表.xlsx')
     teacher_excel = os.path.join(BASE_DIR, '教师表.xlsx')
     banji_excel = os.path.join(BASE_DIR, '班级表.xlsx')
 
@@ -515,9 +527,8 @@ def main():
     # 时间表保存文件
     timetables_file = os.path.join(results_dir, "saved_timetables.pkl")
     
-    # 聚类结果（默认与 course_clustering 输出目录一致：排课结果/课程聚类结果.xlsx）
-    #clustering_file = os.path.join(results_dir, "课程聚类结果2.xlsx")
-    clustering_file="/Users/qingxia/Downloads/Python-projects/毕设/timetable/排课结果1/课程聚类结果2.xlsx"
+    # 聚类结果（4670 那套使用 课程聚类结果2.xlsx，列含 类别ID/类别名称）
+    clustering_file = os.path.join(os.path.dirname(__file__), "排课结果1", "课程聚类结果2.xlsx")
     
     # 加载基础数据
     print("正在加载基础数据...")
@@ -550,11 +561,12 @@ def main():
     print("\n=== 保存排课结果数据 ===")
     save_timetables(courses, teachers, classrooms, classes, timetables_file)
     
-    # 调课
-    timetables_data = load_timetables(timetables_file)
-    #reschedule(timetables_data)
-    # compute_classroom_usage_rates(num_weeks, num_days, num_periods, output_file='教室排课率统计.xlsx')
-    # compute_class_usage_rates(num_weeks, num_days, num_periods, output_file='班级排课率统计.xlsx')
+    # 调课：用子进程跑 reschedule_by_adjusting.py（独立 main 入口，使用最新写入的 pkl）
+    print("\n=== 启动变邻域调课 ===")
+    import subprocess, sys as _sys
+    rc = subprocess.run([_sys.executable, "reschedule_by_adjusting.py"],
+                        cwd=os.path.dirname(os.path.abspath(__file__))).returncode
+    print(f"调课退出码: {rc}")
 
 
 if __name__ == "__main__":

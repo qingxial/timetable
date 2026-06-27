@@ -26,13 +26,12 @@ from utils_for_reschedule import *
 
 # root_path = '智能排课基础数据'
 # course_excel = os.path.join(root_path, '课程表2025-2026-1.xlsx')
-# #course_excel=os.path.join(root_path,'测试课程表.xlsx')
 # classroom_excel = os.path.join(root_path, '更新后的教室表.xlsx')
 # teacher_excel = os.path.join(root_path, '更新后的教师名单2025-2026-1.xlsx')
 # banji_excel = os.path.join(root_path, '班级汇总2025-2026-1.xlsx')
 
 BASE_DIR = os.path.join(os.path.dirname(__file__), '智能排课基础数据', '提取的基础数据表_converted')
-course_excel = os.path.join(BASE_DIR, '课程表.xlsx')
+course_excel = os.path.join(BASE_DIR, '课程表_split.xlsx')   # Issue #14 拆奇数 ZXS 后的副本
 classroom_excel =  os.path.join(BASE_DIR, '教室表.xlsx')
 teacher_excel = os.path.join(BASE_DIR, '教师表.xlsx')
 banji_excel = os.path.join(BASE_DIR, '班级表.xlsx')

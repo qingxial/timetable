@@ -35,9 +35,9 @@ class VizConfig:
     results_dir: str = "排课结果"
     charts_subdir: str = CHART_SUBDIR_DEFAULT
     root_path: str = "智能排课基础数据"
-    num_weeks: int = 17
+    num_weeks: int = 20    # 实际数据为 20 教学周（旧默认 17 会漏算后 3 周）
     num_days: int = 7
-    num_periods: int = 12
+    num_periods: int = 11   # 上午4+下午4+晚上3=11（旧默认 12 偏大）
 
     reschedule_pkl: str = field(init=False)
     scheduled_xlsx: str = field(init=False)
@@ -46,7 +46,9 @@ class VizConfig:
     def __post_init__(self) -> None:
         self.reschedule_pkl = os.path.join(self.results_dir, "reschedule_timetables.pkl")
         self.scheduled_xlsx = os.path.join(self.results_dir, "排课结果_全部.xlsx")
-        self.classroom_excel = os.path.join(self.root_path, "更新后的教室表.xlsx")
+        # 教室座位表必须用与排课同源的转换后教室表（教室代码 CLS#### 一致）；
+        # 旧的「更新后的教室表.xlsx」教室代码体系不同，交集为 0，会导致座位全部回退成 50。
+        self.classroom_excel = os.path.join(self.root_path, "提取的基础数据表_converted", "教室表.xlsx")
 
     @property
     def charts_dir(self) -> str:
@@ -632,10 +634,10 @@ def plot_scheduling_overview(cfg: VizConfig, show: bool) -> None:
         except Exception:
             pass
 
-    original_scheduled = max(0, scheduled - rescheduled_success)
-    if rescheduled_success > scheduled:
-        original_scheduled = scheduled
-        rescheduled_success = 0
+    # 排课结果_全部.xlsx 是「首轮成功」名单（不含调课新增），故它本身就是首轮成功数，
+    # 不能再减 rescheduled_success（那 451 个根本不在这 4130 里）。
+    # 最终成功 = 首轮成功(4130) + 调课新增(451) = 4581。
+    original_scheduled = scheduled            # 首轮成功 = 4130
 
     configure_matplotlib()
     plt.figure(figsize=(8, 5))

@@ -36,6 +36,9 @@ BALANCED_W_EVENING = 0.35  # balanced：「晚间时段惩罚」权重（first v
                            # 纯均匀化会把 21.8% 课时推到晚间；此项把课优先留在日间，
                            # 仅当日间占用率很高时才用晚间。软先验：只影响候选排序，
                            # 若某课可行方案全在晚间仍会正常排晚间）
+BALANCED_W_PAIR_DAY = 0.5  # balanced：「同 paired 虚班同天」惩罚权重（Issue #14）
+                           # 拆分的虚班 A 和 B 排课时尽量不在同一天，避免学生当天上两节同一门课。
+                           # 同样是软先验：候选全冲突时仍会照排。
 EVENING_PERIOD_START = 8   # 0-based：第 9 节及以后算晚间（9-11 节）
 
 
@@ -49,7 +52,7 @@ def set_placement_strategy(strategy: str = "first", seed: int = 2026):
     print(f"[放置策略] {strategy} (seed={seed})")
 
 
-def _select_balanced(candidates, all_rooms, krl, teaching_weeks):
+def _select_balanced(candidates, all_rooms, krl, teaching_weeks, paired_days=None):
     """balanced 策略：从全部可行 (教室, 时段方案) 中选综合得分最低者。
 
     得分 = BALANCED_W_SLOT × 时段全局占用率 + BALANCED_W_ROOMFIT × 教室容量浪费率
@@ -61,8 +64,14 @@ def _select_balanced(candidates, all_rooms, krl, teaching_weeks):
       - 晚间节次占比：方案覆盖单元中第 EVENING_PERIOD_START+1 节及以后的比例。
         均匀 ≠ 可取——晚间天然空闲，纯负载均衡会把课堆向晚间（random 实验中晚间
         占比 8.7%→21.8%），此项作为作息友好先验，仅当日间占用率很高时才让位晚间；
+      - 同 paired 虚班同天（Issue #14）：若该班是奇数 ZXS 拆出的虚班（A/B 一对），
+        paired_days 给出其 paired 虚班已占用的星期集合。落到这些天的候选加
+        BALANCED_W_PAIR_DAY × δ 的惩罚（δ=候选覆盖天与 paired_days 交集占比）。
+        软先验：候选全冲突时仍会照排。paired_days 为 None/空集时此项为 0。
       - 平分时用带种子的微小随机量打破，避免形成新的固定倾向。
     """
+    if paired_days is None:
+        paired_days = ()
     import numpy as np  # noqa: F401  室时间表本身是 numpy 数组
 
     weeks_idx = sorted(teaching_weeks) if teaching_weeks else None
@@ -94,8 +103,15 @@ def _select_balanced(candidates, all_rooms, krl, teaching_weeks):
             waste = (cap - krl_f) / cap
         else:
             waste = 0.0
+        # 同 paired 虚班同天惩罚（Issue #14）
+        cand_days = {d for d, _ in cells}
+        if paired_days and cand_days:
+            pair_overlap = len(cand_days & set(paired_days)) / len(cand_days)
+        else:
+            pair_overlap = 0.0
         score = (BALANCED_W_SLOT * slot_load + BALANCED_W_ROOMFIT * waste
                  + BALANCED_W_EVENING * evening_frac
+                 + BALANCED_W_PAIR_DAY * pair_overlap
                  + _PLACEMENT_RNG.random() * 1e-9)
         if score < best_score:
             best_score, best = score, (room, arrangement)
@@ -131,11 +147,30 @@ def pre_selection(courses, classrooms, course_type=None, department=None, campus
         tuple: (教学班索引字典, 教室索引字典, 有效教室列表)
     """
     # 筛选有效教学班的JXBID（既需要排课又需要安排教室），只排了周学时在1-8节之间的课程
+    # 兼容字段类型：SFXYPK/SFXYJAS 在不同数据源里可能是 int 1 或 str '1'；SKZCDM 可能含全 0
+    def _is_one(v):
+        return str(v).strip() in ('1', '1.0')
+    def _zcdm_valid(v):
+        if v is None: return False
+        s = str(v).strip()
+        if s == '' or s == 'None' or s == 'nan': return False
+        try:
+            return int(s) != 0
+        except (TypeError, ValueError):
+            return True
+    def _zxs_in_range(v):
+        """ZXS 在 (0, 8] 范围内；兼容 str / int / float（实际数据 ZXS 常被存为字符串 '4'）。"""
+        if v is None: return False
+        try:
+            x = float(v)
+        except (TypeError, ValueError):
+            return False
+        return 0 < x <= 8
     valid_jxbids = [
-        jxb.JXBID 
-        for jxb in courses 
-        if jxb.SFXYPK == 1 and jxb.SFXYJAS == 1 and jxb.RWJSZCDM != None and 
-            jxb.KCLB != None and jxb.SKXQ != None and jxb.SKZCDM != None and jxb.SKZCDM != '0000000000000000' and jxb.ZXS != None and 0 < jxb.ZXS <= 8 and
+        jxb.JXBID
+        for jxb in courses
+        if _is_one(jxb.SFXYPK) and _is_one(jxb.SFXYJAS) and jxb.RWJSZCDM is not None and
+            jxb.KCLB is not None and jxb.SKXQ is not None and _zcdm_valid(jxb.SKZCDM) and _zxs_in_range(jxb.ZXS) and
             (course_type is None or jxb.KCLB == course_type) and  # 根据课程类别筛选
             (department is None or jxb.YXMC == department) and    # 根据开课单位筛选
             (campus is None or jxb.SKXQ == campus)                # 根据上课校区筛选
@@ -559,8 +594,17 @@ def schedule_class(jxbid, courses, teachers, classes, classrooms, flag_reschedul
         if PLACEMENT_STRATEGY == "random":
             best_classroom, selected_arrangement = _PLACEMENT_RNG.choice(all_candidates)
         else:  # balanced
+            # Issue #14：查 paired 虚班的已占星期集合（避同天软约束）
+            paired_days = None
+            pj = getattr(jxbs[0], "paired_jxbid", None)
+            if pj:
+                for c in courses:
+                    if c.JXBID == pj:
+                        paired_days = c.scheduled_days
+                        break
             best_classroom, selected_arrangement = _select_balanced(
-                all_candidates, classrooms, jxbs[0].KRL, teaching_weeks)
+                all_candidates, classrooms, jxbs[0].KRL, teaching_weeks,
+                paired_days=paired_days)
 
     # 检查是否找到可行的教室和方案
     if max_arrangements <= 0 or not best_classroom:
@@ -576,6 +620,9 @@ def schedule_class(jxbid, courses, teachers, classes, classrooms, flag_reschedul
     
     # 在时间表中标记排课信息
     for day, period, hours in selected_arrangement:
+        # 记录本班已占的星期（Issue #14 LCV 避同天软约束查询用，与 paired_jxbid 配对使用）
+        for every_jxb in jxbs:
+            every_jxb.scheduled_days.add(day)
         for week in teaching_weeks:
             # 给课程标记:
             for every_jxb in jxbs:

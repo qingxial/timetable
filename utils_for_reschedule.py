@@ -356,6 +356,9 @@ def rebuild_timetables_from_scheduled_courses(scheduled_df, teachers, classrooms
                 end_period = int(period_range[1]) if len(period_range) > 1 else start_period + 1
                 hours = end_period - start_period
 
+                # 同步 scheduled_days（Issue #14 LCV 避同天软约束查询用）
+                for every_jxb in jxbs:
+                    every_jxb.scheduled_days.add(day)
                 # 更新时间表
                 for week in teaching_weeks:
                     for every_jxb in jxbs:
@@ -644,6 +647,9 @@ def place_placement(current_classroom, arrangements, teaching_weeks, jxbid,jxbs,
     教师/班级 timetable 的单元为 dict，按你的原代码用 candidate_jxbid 记录到 'course' 字段。
     """
     for day, period, hours in arrangements:
+        # 同步 scheduled_days（Issue #14 LCV 避同天软约束查询用）
+        for every_jxb in jxbs:
+            every_jxb.scheduled_days.add(day)
         for week in teaching_weeks:
             for every_jxb in jxbs:
                #every_jxb.IF_scheduled = True

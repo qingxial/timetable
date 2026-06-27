@@ -7,6 +7,8 @@ my_models/
 排课结果1/
 排课结果2/
 排课要求和基础数据_v1.0.xlsx
+排课结果3/
+排课结果_xjtu/
 
 # IDE & tools
 .venv/
@@ -32,3 +34,6 @@ logs/
 
 # macOS
 .DS_Store
+# Office
+*.pptx
+*.tmp
