@@ -184,17 +184,18 @@ def check_class_conflict(course) -> bool:
 
 
 def llxs_schedulable(course) -> bool:
-    """理论学时是否需要排课。LLXS==0 → 不排课（Issue #12）；缺省/空/非数值 → 不因 LLXS 过滤。"""
+    """理论学时是否需要排课（Issue #12）。
+    仅当 LLXS 是 > 0 的数值才参与排课；==0 / 空 / None / 非数值 一律过滤。"""
     v = getattr(course, 'LLXS', None)
     if v is None:
-        return True
+        return False
     s = str(v).strip()
     if s in ('', 'None', 'nan'):
-        return True
+        return False
     try:
         return float(s) > 0
     except (TypeError, ValueError):
-        return True
+        return False
 
 
 @dataclass
