@@ -42,8 +42,8 @@ class Course:
     # 排课需求
     SFXYPK: int          # 是否需要排课
     SFXYJAS: int         # 是否需要教室
-    IF_ROOM_CONFICT: int   # 是否检查教室冲突(1是/0否)；0=不写教室占用，允许多班共占同一场馆(Issue #13)
-    IF_CLASS_CONFICT: int  # 是否检查班级冲突(1是/0否)；0=该课不参与班级冲突检查(Issue #13)
+    IF_ROOM_CONFICT: int   # 教室是否允许冲突：1=允许多班共占同一教室(不检查、不写占用)，0/缺省=正常检查(Issue #13)
+    IF_CLASS_CONFICT: int  # 班级是否允许冲突：1=该课不参与班级冲突检查(不检查、不写占用)，0/缺省=正常检查(Issue #13)
     JASLXDM: str         # 教室类型代码
     JASLXMC: str         # 教室类型名称
     JXLDM: str           # 教学楼代码
@@ -130,11 +130,11 @@ def load_courses(
                 course_data[param] = raw
 
         # 新增开关字段在「缺列 / 空表头」时的默认值：
-        #   LLXS=None                         → 不因理论学时过滤（保持既有行为）
-        #   IF_ROOM_CONFICT/IF_CLASS_CONFICT=1 → 默认检查冲突（向后兼容）
+        #   LLXS=None                          → 不因理论学时过滤（保持既有行为）
+        #   IF_ROOM_CONFICT / IF_CLASS_CONFICT = 0 → 默认正常检查冲突（向后兼容）
         course_data.setdefault('LLXS', None)
-        course_data.setdefault('IF_ROOM_CONFICT', 1)
-        course_data.setdefault('IF_CLASS_CONFICT', 1)
+        course_data.setdefault('IF_ROOM_CONFICT', 0)
+        course_data.setdefault('IF_CLASS_CONFICT', 0)
 
         # 添加固定参数
         course_data.update(weeks=weeks, days=days, periods=periods)
@@ -160,25 +160,27 @@ def load_courses(
 # ---------------------------------------------------------------------------
 # 排课开关辅助函数（Issue #12 理论学时 / Issue #13 教室·班级冲突检查开关）
 # 这些字段在不同数据源里可能是 int 1/0 或 str '1'/'0'，统一在此判定，避免散落比较。
+# 语义（按数据所有者口径，不看中文表头字面）：
+#   IF_ROOM_CONFICT  == 1 → 允许教室冲突（体育馆多班共占等），不检查、不写教室占用
+#   IF_ROOM_CONFICT  == 0 / 缺省 → 不允许冲突，按正常排课检查并写入
+#   IF_CLASS_CONFICT 同上
 # ---------------------------------------------------------------------------
-def _switch_on(v) -> bool:
-    """开关字段是否为「开」。None/空/非 0 一律视为开（1），仅显式 0 视为关。"""
+def _conflict_allowed(v) -> bool:
+    """显式 '1' / 1 / 1.0 才表示「允许冲突」（即跳过检查）；其余一律按需检查。"""
     if v is None:
-        return True
+        return False
     s = str(v).strip()
-    if s in ('', 'None', 'nan'):
-        return True
-    return s not in ('0', '0.0')
+    return s in ('1', '1.0')
 
 
 def check_room_conflict(course) -> bool:
-    """该课程是否需要检查教室冲突。IF_ROOM_CONFICT==0 → 不检查（体育场馆多班共占，Issue #13）。"""
-    return _switch_on(getattr(course, 'IF_ROOM_CONFICT', 1))
+    """该课程是否需要检查教室冲突。IF_ROOM_CONFICT==1 → 允许冲突，不检查；其它一律检查。"""
+    return not _conflict_allowed(getattr(course, 'IF_ROOM_CONFICT', 0))
 
 
 def check_class_conflict(course) -> bool:
-    """该课程是否需要检查班级冲突。IF_CLASS_CONFICT==0 → 不检查（Issue #13）。"""
-    return _switch_on(getattr(course, 'IF_CLASS_CONFICT', 1))
+    """该课程是否需要检查班级冲突。IF_CLASS_CONFICT==1 → 允许冲突，不检查；其它一律检查。"""
+    return not _conflict_allowed(getattr(course, 'IF_CLASS_CONFICT', 0))
 
 
 def llxs_schedulable(course) -> bool:
