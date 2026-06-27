@@ -506,7 +506,7 @@ def main():
 
     # 基础数据路径（4670 那套：converted 数据，2026-06-23 切回）
     BASE_DIR = os.path.join(os.path.dirname(__file__), '智能排课基础数据', '提取的基础数据表_converted')
-    course_excel = os.path.join(BASE_DIR, '课程表_split.xlsx')   # Issue #14 拆奇数 ZXS 后的副本
+    course_excel = os.path.join(BASE_DIR, '课程表_split_merged.xlsx')   # Issue #14 拆奇数 ZXS + 合并冲突开关列（含 LLXS/IF_ROOM_CONFICT/IF_CLASS_CONFICT）
     classroom_excel = os.path.join(BASE_DIR, '教室表.xlsx')
     teacher_excel = os.path.join(BASE_DIR, '教师表.xlsx')
     banji_excel = os.path.join(BASE_DIR, '班级表.xlsx')
