@@ -171,6 +171,7 @@ def pre_selection(courses, classrooms, course_type=None, department=None, campus
         for jxb in courses
         if _is_one(jxb.SFXYPK) and _is_one(jxb.SFXYJAS) and jxb.RWJSZCDM is not None and
             jxb.KCLB is not None and jxb.SKXQ is not None and _zcdm_valid(jxb.SKZCDM) and _zxs_in_range(jxb.ZXS) and
+            llxs_schedulable(jxb) and  # 理论学时 LLXS==0 的课直接跳过排课（Issue #12）
             (course_type is None or jxb.KCLB == course_type) and  # 根据课程类别筛选
             (department is None or jxb.YXMC == department) and    # 根据开课单位筛选
             (campus is None or jxb.SKXQ == campus)                # 根据上课校区筛选
@@ -544,8 +545,8 @@ def schedule_class(jxbid, courses, teachers, classes, classrooms, flag_reschedul
         if teacher is not None and weeks  # 注意这里确保周次非空才加入 map
     }   #老师和上课周次一一对应,确保周次非空才加入 map
 
-    # 获取相关班级列表【修改】一直失败则放宽
-    if class_ralex:
+    # 获取相关班级列表【修改】一直失败则放宽；IF_CLASS_CONFICT==0 的课不检查班级冲突（Issue #13）
+    if class_ralex or not check_class_conflict(jxbs[0]):
         list_of_classes=[]
     else:
         list_of_classes = get_class_instances1(jxbs[0], classes,courses) ##if hasattr(jxbs[0], 'TJBJ') else []
@@ -618,6 +619,9 @@ def schedule_class(jxbid, courses, teachers, classes, classrooms, flag_reschedul
     
     print(f"\n为教学班 {jxbid} ({jxbs[0].KCM}) 在教室 {best_classroom.JASMC} 排课")
     
+    # IF_ROOM_CONFICT==0 的课不写教室占用 → 教室格子恒为空，天然多班共占（Issue #13 方案 B）
+    write_room = check_room_conflict(jxbs[0])
+
     # 在时间表中标记排课信息
     for day, period, hours in selected_arrangement:
         # 记录本班已占的星期（Issue #14 LCV 避同天软约束查询用，与 paired_jxbid 配对使用）
@@ -630,9 +634,10 @@ def schedule_class(jxbid, courses, teachers, classes, classrooms, flag_reschedul
                 for p in range(period, period + hours):
                     every_jxb.timetable[week, day, p] =  best_classroom.JASDM
 
-            # 在教室时间表中标记
-            for p in range(period, period + hours):
-                best_classroom.timetable[week, day, p] = jxbid
+            # 在教室时间表中标记（IF_ROOM_CONFICT==0 时跳过写入，实现教室可共占）
+            if write_room:
+                for p in range(period, period + hours):
+                    best_classroom.timetable[week, day, p] = jxbid
             
             # 在教师时间表中标记
             for teacher_id, (teacher, weeks) in teacher_week_map.items():

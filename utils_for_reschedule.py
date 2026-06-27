@@ -322,7 +322,9 @@ def rebuild_timetables_from_scheduled_courses(scheduled_df, teachers, classrooms
 
             # 获取教师和班级列表
             list_of_JSHs = [jxb.JSH for jxb in jxbs]
-            list_of_classes = get_class_instances1(jxbs[0], classes, courses)
+            # 冲突开关（Issue #13）：IF_CLASS_CONFICT==0 不占班级表，IF_ROOM_CONFICT==0 不占教室表
+            list_of_classes = get_class_instances1(jxbs[0], classes, courses) if check_class_conflict(jxbs[0]) else []
+            write_room = check_room_conflict(jxbs[0])
             list_of_teacher_week = [
                 trans_week_flags(jxb.RWJSZCDM) if hasattr(jxb, 'RWJSZCDM') and jxb.RWJSZCDM else []
                 for jxb in jxbs
@@ -366,9 +368,10 @@ def rebuild_timetables_from_scheduled_courses(scheduled_df, teachers, classrooms
                         for p in range(start_period, start_period + hours):
                             every_jxb.timetable[week, day, p] = classroom.JASDM
 
-                    # 更新教室时间表
-                    for p in range(start_period, start_period + hours):
-                        classroom.timetable[week, day, p] = jxbid
+                    # 更新教室时间表（IF_ROOM_CONFICT==0 时跳过写入，实现教室可共占）
+                    if write_room:
+                        for p in range(start_period, start_period + hours):
+                            classroom.timetable[week, day, p] = jxbid
 
                     # 更新教师时间表
                     # 在教师时间表中标记
@@ -646,6 +649,8 @@ def place_placement(current_classroom, arrangements, teaching_weeks, jxbid,jxbs,
     将“候选课程”安排到新位置：同时写入 教室/教师/班级 三张时间表。
     教师/班级 timetable 的单元为 dict，按你的原代码用 candidate_jxbid 记录到 'course' 字段。
     """
+    # IF_ROOM_CONFICT==0 的课不写教室占用 → 教室格子恒为空，天然多班共占（Issue #13 方案 B）
+    write_room = check_room_conflict(jxbs[0]) if jxbs else True
     for day, period, hours in arrangements:
         # 同步 scheduled_days（Issue #14 LCV 避同天软约束查询用）
         for every_jxb in jxbs:
@@ -655,9 +660,10 @@ def place_placement(current_classroom, arrangements, teaching_weeks, jxbid,jxbs,
                #every_jxb.IF_scheduled = True
                 for p in range(period, period + hours):
                     every_jxb.timetable[week, day, p] = current_classroom.JASDM
-            # 教室：直接写入教学班ID
-            for p in range(period, period + hours):
-                current_classroom.timetable[week, day, p] = jxbid
+            # 教室：直接写入教学班ID（IF_ROOM_CONFICT==0 时跳过写入）
+            if write_room:
+                for p in range(period, period + hours):
+                    current_classroom.timetable[week, day, p] = jxbid
 
             # 教师：仅在该教师的有效周内写入
             for _, (teacher, weeks) in teacher_week_map.items():

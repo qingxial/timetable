@@ -496,8 +496,8 @@ def re_with_match_courses_betchs_new(
         # 候选允许的教室池（宽松）
         suitable_classrooms = filter_suitable_classrooms(classrooms, candidate_jxbs[0], relax_constraints=True)
         
-        # 根据 class_ralex 决定是否检查班级冲突
-        if class_ralex:
+        # 根据 class_ralex 或课程 IF_CLASS_CONFICT 开关决定是否检查班级冲突（Issue #13）
+        if class_ralex or not check_class_conflict(info['jxbs'][0]):
             re_list_of_classes = []  # 不检查班级冲突
         else:
             re_list_of_classes = info['classes_list']  # 检查班级冲突
@@ -541,8 +541,8 @@ def re_with_match_courses_betchs_new(
             # 候选允许的教室池（宽松）
             suitable_classrooms = filter_suitable_classrooms(classrooms, candidate_jxbs[0], relax_constraints=True)
             
-            # 根据 class_ralex 决定是否检查班级冲突
-            if class_ralex:
+            # 根据 class_ralex 或课程 IF_CLASS_CONFICT 开关决定是否检查班级冲突（Issue #13）
+            if class_ralex or not check_class_conflict(info['jxbs'][0]):
                 re_list_of_classes = []  # 不检查班级冲突
             else:
                 re_list_of_classes = info['classes_list']  # 检查班级冲突
