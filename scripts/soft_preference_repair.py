@@ -257,13 +257,14 @@ def main():
     for c in courses:
         by_id.setdefault(c.JXBID, []).append(c)
 
-    df_fail = pd.read_excel(args.failed)
+    # dtype=str：JXBID 末位为 0 时（如 150000290.160）若按数字读会丢尾零，必须按字符串读
+    df_fail = pd.read_excel(args.failed, dtype=str)
     col = 'jxbid' if 'jxbid' in df_fail.columns else '教学班ID'
     failed_ids = [str(x).strip() for x in df_fail[col]]
 
     # 限定到算法侧（②③④ 资源超订）；数据问题课(①偏好错位/撞禁排、⓪日模式/教室静态)不硬塞
     if args.attribution and args.attribution.lower() != 'none' and os.path.isfile(args.attribution):
-        attr = pd.read_excel(args.attribution)
+        attr = pd.read_excel(args.attribution, dtype=str)
         attr['教学班ID'] = attr['教学班ID'].astype(str)
         algo_ids = set(attr.loc[
             attr['卡在步骤'].astype(str).str.startswith(('②', '③', '④')), '教学班ID'])
