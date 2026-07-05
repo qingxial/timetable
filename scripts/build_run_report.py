@@ -33,7 +33,7 @@ D2I = {'周一': 0, '周二': 1, '周三': 2, '周四': 3, '周五': 4, '周六'
 C_BLUE, C_GREEN, C_ORANGE, C_RED, C_PURP = '#1E88E5', '#43A047', '#FB8C00', '#E53935', '#8E24AA'
 
 # ---------------- 数据 ----------------
-SCHED = '排课结果/调课后的整体结果_软偏好修复.xlsx'
+SCHED = os.environ.get('SCHED_OVERRIDE') or '排课结果/调课后的整体结果_软偏好修复.xlsx'
 if not os.path.isfile(SCHED):
     SCHED = '排课结果/调课后的整体结果.xlsx'
 s = pd.read_excel(SCHED, dtype={'教学班ID': str})
