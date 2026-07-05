@@ -51,14 +51,15 @@ def n_uniq(path, col):
 
 TOTAL = 4666
 first_fail = n_uniq('排课结果/排课失败课程_全部.xlsx', '教学班ID')       # 403
-resched_fail = n_uniq('排课结果/调课失败的排课失败课程.xlsx', 'jxbid')    # 240
 soft = 0
 if os.path.isfile('排课结果/软偏好修复明细.xlsx'):
-    soft = pd.read_excel('排课结果/软偏好修复明细.xlsx', dtype=str)['教学班ID'].nunique()  # 9
+    soft = pd.read_excel('排课结果/软偏好修复明细.xlsx', dtype=str)['教学班ID'].nunique()
+# 最终成功以「最终课表」的唯一教学班数为准（权威口径，避免对软偏好重复计数）：
+# 调课失败清单已是「软偏好救回之后」的口径，故不再二次相减。
+final_ok = s['教学班ID'].nunique()
+final_fail = TOTAL - final_ok
 first_ok = TOTAL - first_fail
-resched_ok = first_fail - resched_fail
-final_fail = resched_fail - soft
-final_ok = TOTAL - final_fail
+resched_ok = final_ok - first_ok - soft   # 变邻域调课净新增（= 最终成功 − 首轮 − 软偏好）
 rate = final_ok / TOTAL * 100
 
 # ---------------- 工具 ----------------
