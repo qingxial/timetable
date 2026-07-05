@@ -89,7 +89,7 @@ def split_row(row, scheme, H, L, a, b):
         r[C_RWJSZCDM] = _mask_from_weeks(rw_weeks, len(rw) if rw else length)
         return r
 
-    return make("@A", fs, H), make("@B", bs, L)
+    return make("@FA", fs, H), make("@FB", bs, L)
 
 
 def run(src, dst, apply=False):
@@ -111,7 +111,8 @@ def run(src, dst, apply=False):
             out_rows.append(row); stats['unchanged'] += 1; continue
         is_frac = (z != int(z))
         sfxypk = str(row[C_SFXYPK]).strip() in ('1', '1.0')
-        if not is_frac or not sfxypk:
+        already_virtual = '@' in str(row[C_JXBID])   # Issue#14 的 @W/@B 变体，不再二次拆分
+        if not is_frac or not sfxypk or already_virtual:
             out_rows.append(row); stats['unchanged'] += 1; continue
 
         # T 用 LLXS（用户敲定），空则回退 学时XS（idx 11）

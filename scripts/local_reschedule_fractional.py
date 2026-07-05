@@ -104,7 +104,7 @@ def main():
     for c in courses_new:
         new_by_id[c.JXBID].append(c)
     base_ids = sorted(set(jx.rsplit('@', 1)[0] for jx in new_by_id
-                          if jx.endswith('@A') or jx.endswith('@B')))
+                          if jx.endswith('@FA') or jx.endswith('@FB')))
     if args.limit:
         base_ids = base_ids[:args.limit]
     print(f'待局部重排基类课: {len(base_ids)} 门')
@@ -127,7 +127,7 @@ def main():
         base = jx.rsplit('@', 1)[0]
         out = []
         for (day, period, hours) in arr:
-            out.append({'教学班ID': base, '虚班': jx[-1], '课程名称': cj.KCM, '教师号': cj.JSH,
+            out.append({'教学班ID': base, '虚班': jx.rsplit('@',1)[1], '课程名称': cj.KCM, '教师号': cj.JSH,
                         '每周段节数': cj.ZXS, '教室代码': room.JASDM, '教室': room.JASMC,
                         '星期': IDX2DAY[day], '节次': f'第{period+1}-{period+hours}节',
                         '周次数': len(wks), '本段实排节数×周': hours * len(wks)})
@@ -155,7 +155,7 @@ def main():
         if snap:
             clear_cells(base, snap, room_by_dm, old_tlist, old_clist, old_jxbs)
 
-        va, vb = base + '@A', base + '@B'
+        va, vb = base + '@FA', base + '@FB'
         ra = place_virtual(va) if va in new_by_id else []
         rb = place_virtual(vb) if vb in new_by_id else []
 
