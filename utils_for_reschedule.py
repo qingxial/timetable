@@ -618,30 +618,33 @@ def clear_placement(current_classroom, arrangements,teaching_weeks,jxbid,jxbs,te
     - 教室.timetable 里存的是教学班ID（或类似标记），用 classroom_marker 对比清空。
     - 教师/班级 timetable 的 cell 是 {'course': 课程名, 'classroom': 教室名}，用 course_name 对比清空。
     """
+    # 归属判断（修复教师双占/教室悬挂）：只清「确实属于本课 jxbid」的格子，
+    # 避免调课挪课-回滚时把同格已被别的课占用的占位误抹（导致教室占了教师没占的悬挂）。
+    _jid = str(jxbid).strip()
     for day, period, hours in arrangements:
         for week in teaching_weeks:
             for every_jxb in jxbs:
                 for p in range(period, period + hours):
-                    every_jxb.timetable[week, day, p] = ""
-            # 清除教室时间表
+                    every_jxb.timetable[week, day, p] = ""   # 课程自身表：整门移除，无条件清
+            # 清除教室时间表（仅当该格确实写着本课）
             for p in range(period, period + hours):
-                #if current_classroom.timetable[week, day, p] == jxbid:
-                current_classroom.timetable[week, day, p] = ""
+                if str(current_classroom.timetable[week, day, p]).strip() == _jid:
+                    current_classroom.timetable[week, day, p] = ""
 
-            # 在教师时间表中标记
+            # 清除教师时间表（仅当该格确实是本课）
             for teacher_id, (teacher, weeks) in teacher_week_map.items():
                 if week in weeks:
                     for p in range(period, period + hours):
-                        #if teacher.timetable[week, day, p]['course'] == jxbid:
-                        teacher.timetable[week, day, p]['course'] = ""
-                        teacher.timetable[week, day, p]['classroom'] = ""
+                        if str(teacher.timetable[week, day, p]['course']).strip() == _jid:
+                            teacher.timetable[week, day, p]['course'] = ""
+                            teacher.timetable[week, day, p]['classroom'] = ""
 
-            # 清除班级时间表
+            # 清除班级时间表（仅当该格确实是本课）
             for class_obj in classes:
                 for p in range(period, period + hours):
-                    #if class_obj.timetable[week, day, p]['course'] == jxbid:
-                    class_obj.timetable[week, day, p]['course'] = ""
-                    class_obj.timetable[week, day, p]['classroom'] = ""
+                    if str(class_obj.timetable[week, day, p]['course']).strip() == _jid:
+                        class_obj.timetable[week, day, p]['course'] = ""
+                        class_obj.timetable[week, day, p]['classroom'] = ""
 
 ##写入时间表
 def place_placement(current_classroom, arrangements, teaching_weeks, jxbid,jxbs, teacher_week_map, classes):
