@@ -488,6 +488,13 @@ def get_class_instances1(course, classes: list, all_courses: list) -> list:
         if name.strip()
     ]
 
+    # 「全校/全院」等泛指标记 = 无固定教学班：公选/通识课面向全校，学生自选，
+    # 两门全校课同时段不构成班级冲突。剔除这类泛指名，避免所有全校课被映射到
+    # 同一个「全校」班而产生大量假冲突（并把本可同时开的课误判为冲突）。
+    class_names = [n for n in class_names if not (('全校' in n) or ('全院' in n))]
+    if not class_names:
+        return []
+
     # 先处理“当前数量 >= 8”这一条件
     if len(class_names) >= 8:
         return []
