@@ -21,6 +21,14 @@ from special_requirements import resolve_effective, compute_block_template, _par
 IDX2DAY = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 
 
+def deviate_pref(prefer_time):
+    """最小偏离：把 '周X(a-b节)' 的天松开为 '全周(a-b节)'（保留时段窗口、任意工作日）。
+    用于精确偏好那一格被物理占死时的兜底重试。返回(新偏好, 是否有变化)。"""
+    s = str(prefer_time or '').replace('（', '(').replace('）', ')')
+    new = re.sub(r'周[一二三四五六日]\((\d+-\d+)节?\)', r'全周(\1节)', s)
+    return new, (new != s)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--pickle', default='排课结果/reschedule_timetables_frac.pkl')
@@ -31,6 +39,7 @@ def main():
     ap.add_argument('--days', type=int, default=7)
     ap.add_argument('--strategy', default='first')
     ap.add_argument('--limit', type=int, default=0)
+    ap.add_argument('--deviate', action='store_true', help='精确偏好格被占死时, 保留时段窗口松开天再试(最小偏离)')
     ap.add_argument('--dry-run', action='store_true')
     args = ap.parse_args()
     utils1.set_placement_strategy(args.strategy, 2026)
@@ -134,6 +143,21 @@ def main():
                 j.block_template = ','.join(map(str, eff['block_template'])) if eff['block_template'] else ''
             room, arr, wks = schedule_class(str(c0.JXBID), courses, teachers, classes_all, classrooms,
                                             flag_reschedule=True, num_days=args.days)
+            dev_msg = ''
+            if not (room and arr) and args.deviate:
+                # 兜底：精确偏好格被占死 → 保留时段窗口、松开"天"再试(最小偏离)
+                dev_pref, changed_p = deviate_pref(c0.Prefer_Time)
+                if changed_p:
+                    bak_pref = c0.Prefer_Time
+                    for j in jxbs:
+                        j.Prefer_Time = dev_pref
+                    room, arr, wks = schedule_class(str(c0.JXBID), courses, teachers, classes_all, classrooms,
+                                                    flag_reschedule=True, num_days=args.days)
+                    if room and arr:
+                        dev_msg = f" + 最小偏离(松开天:{bak_pref}→{dev_pref})"
+                    else:
+                        for j in jxbs:
+                            j.Prefer_Time = bak_pref
             if room and arr:
                 placed += 1
                 for (day, period, hours) in arr:
@@ -141,11 +165,11 @@ def main():
                                  '周学时': c0.ZXS, '教室代码': room.JASDM, '教室': room.JASMC,
                                  '星期': IDX2DAY[day], '节次': f'第{period+1}-{period+hours}节',
                                  '周次数': len(wks) if wks else '', '放宽桶': 'A'})
-                rec(jx, c0.KCM, f"删被覆盖禁排段{eff['dropped_forbids']} + 连排块{eff['block_template'] or '2'}", True)
+                rec(jx, c0.KCM, f"删被覆盖禁排段{eff['dropped_forbids']} + 连排块{eff['block_template'] or '2'}{dev_msg}", True)
             else:
                 for j in jxbs:
                     j.unavailable_Time = bak[0]
-                rec(jx, c0.KCM, f"删禁排{eff['dropped_forbids']}后仍无可行位", False)
+                rec(jx, c0.KCM, f"删禁排{eff['dropped_forbids']}后仍无可行位(含最小偏离)", False)
 
     print(f'\n=== 统一优先级放宽 ===  解析有变化并试排 {tried} 门, 新排入 {placed} 门')
     if not args.dry_run:
