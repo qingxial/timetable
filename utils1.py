@@ -561,8 +561,18 @@ def schedule_class(jxbid, courses, teachers, classes, classrooms, flag_reschedul
     # 获取周学时
     zxs = jxbs[0].ZXS
     time_constraints = build_preferences(jxbs[0].Prefer_Time,jxbs[0].unavailable_Time)  #这个课程的时间限制
+    # 特殊要求(Q2)：课程对象上若带 max_block/block_template，则允许非2连排（默认 2/None 不改变行为）
+    _mb = getattr(jxbs[0], 'max_block', 2) or 2
+    _bt = getattr(jxbs[0], 'block_template', None) or None
+    try:
+        _mb = int(_mb)
+    except (TypeError, ValueError):
+        _mb = 2
+    if isinstance(_bt, str):
+        _bt = [int(x) for x in _bt.replace('，', ',').split(',') if x.strip().isdigit()] or None
     # 生成排课日模式
-    day_patterns = new_generate_day_patterns(zxs, num_days,time_constraints,flag_reschedule)
+    day_patterns = new_generate_day_patterns(zxs, num_days,time_constraints,flag_reschedule,
+                                             max_block=_mb, block_template=_bt)
     
     # 筛选适合的教室
     suitable_classrooms = filter_suitable_classrooms(classrooms, jxbs[0], relax_constraints)
