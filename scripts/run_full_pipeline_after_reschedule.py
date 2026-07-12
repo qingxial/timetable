@@ -3,10 +3,14 @@
 
 按依赖顺序一键串跑：
   ② 合并软偏好修复落子 → 调课后的整体结果_软偏好修复.xlsx
-  ③ 小数周学时前后分段拆分 + 局部重排 → 调课后的整体结果_小数拆分.xlsx（最终课表）
-  ④ 失败归因分析 + 逐课根因回填（标注软偏好救回）
-  ⑤ 结果分析 + HTML 报告
-  ⑥ 汇总 + 悬挂占用校验（验证 clear_placement 修复效果）
+  ③ 小数周学时前后分段拆分 + 局部重排 → 调课后的整体结果_小数拆分.xlsx
+  ④ 特殊要求·分级约束放宽调课 + 合并 → 调课后的整体结果_特殊放宽.xlsx（最终课表）
+     · 桶A 早上偏好被类别禁排挡住 → L3 覆盖 L2（删该行禁排段）
+     · 桶B 仅周末+高学时 → 小数分段 @FA/@FB + 周末 >2 连排（守恒零残差）
+  ⑤ 统一软约束松弛总记录（时间偏好偏离 + 类别禁排覆盖 + 连排放宽）
+  ⑥ 失败归因分析 + 逐课根因回填（标注软偏好救回）
+  ⑦ 结果分析 + HTML 报告
+  ⑧ 汇总 + 悬挂占用校验
 
 每一步基于上一步的新产物；产出统一，供最后提交。
 """
@@ -100,11 +104,38 @@ def frac_reschedule_and_merge(soft_overall):
     return out
 
 
-# ---------- ④ 失败归因 + 回填 ----------
-def failure_attribution(soft_ids):
-    sh('echo n | python3 postfailure_analysis.py '
-       '--failed 排课结果/调课失败的排课失败课程.xlsx '
+# ---------- ④ 特殊要求·约束放宽调课 + 合并（Q2/P4）----------
+def special_relax_and_merge():
+    """在小数拆分冻结态上，对失败课按分级放宽再试排（桶A删类别禁排/桶B小数分段+周末大连排），
+    合并进最终课表。产出 调课后的整体结果_特殊放宽.xlsx（新最终课表）。"""
+    sh('python3 scripts/reschedule_special_relax.py '
        '--pickle 排课结果/reschedule_timetables_frac.pkl '
+       '--out-pickle 排课结果/reschedule_timetables_special.pkl')
+    sh('python3 scripts/merge_special_relax.py')
+    out = f'{RES}/调课后的整体结果_特殊放宽.xlsx'
+    if os.path.isfile(out):
+        m = rd(out)
+        print(f'  ④ 特殊放宽合并 → {m["教学班ID"].nunique()} 门')
+        return out
+    return f'{RES}/调课后的整体结果_小数拆分.xlsx'
+
+
+# ---------- ⑤ 统一软约束松弛总记录（Q3）----------
+def relaxation_ledger():
+    sh('python3 scripts/build_relaxation_ledger.py')
+
+
+# ---------- ⑥ 失败归因 + 回填 ----------
+def failure_attribution(soft_ids):
+    failed = ('排课结果/调课失败的排课失败课程_特殊放宽后.xlsx'
+              if os.path.isfile(f'{RES}/调课失败的排课失败课程_特殊放宽后.xlsx')
+              else '排课结果/调课失败的排课失败课程.xlsx')
+    pkl = ('排课结果/reschedule_timetables_special.pkl'
+           if os.path.isfile(f'{RES}/reschedule_timetables_special.pkl')
+           else '排课结果/reschedule_timetables_frac.pkl')
+    sh(f'echo n | python3 postfailure_analysis.py '
+       f'--failed {failed} '
+       f'--pickle {pkl} '
        '--weeks 20 --days 7 --periods 11 '
        '--output 排课结果/失败课程归因与建议.xlsx')
     sh('python3 scripts/enrich_failure_attribution.py')
@@ -123,9 +154,12 @@ def report(final_overall):
     sh(f'SCHED_OVERRIDE="{final_overall}" python3 scripts/build_run_report.py')
 
 
-# ---------- ⑥ 悬挂校验 ----------
+# ---------- ⑦ 悬挂校验 ----------
 def verify_dangling():
-    with open(f'{RES}/reschedule_timetables_frac.pkl', 'rb') as f:
+    pkl = (f'{RES}/reschedule_timetables_special.pkl'
+           if os.path.isfile(f'{RES}/reschedule_timetables_special.pkl')
+           else f'{RES}/reschedule_timetables_frac.pkl')
+    with open(pkl, 'rb') as f:
         data = pickle.load(f)
     t_by_jsh = defaultdict(list)
     for t in data['teachers']:
@@ -157,8 +191,10 @@ def main():
     print('下游全链重跑（调课修复后）')
     print('=' * 60)
     soft_overall, soft_ids = merge_soft()
-    final_overall = frac_reschedule_and_merge(soft_overall)
-    failure_attribution(soft_ids)
+    frac_overall = frac_reschedule_and_merge(soft_overall)
+    final_overall = special_relax_and_merge()          # ④ 分级放宽（最终课表）
+    relaxation_ledger()                                # ⑤ 统一松弛总记录
+    failure_attribution(soft_ids)                      # ⑥ 失败归因（残余）
     report(final_overall)
     dangling = verify_dangling()
 
