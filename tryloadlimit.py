@@ -209,7 +209,8 @@ def _try_promote_options_to_preferred_groups(
 
 
 #生成每天上几个小时列表
-def new_generate_day_patterns(zxs, days_of_week, time_constraints=None,flag_reschedule=False):
+def new_generate_day_patterns(zxs, days_of_week, time_constraints=None,flag_reschedule=False,
+                              max_block=2, block_template=None):
     """根据不同ZXS值和时间限制生成特定的上课天数模式
 
     Args:
@@ -272,6 +273,21 @@ def new_generate_day_patterns(zxs, days_of_week, time_constraints=None,flag_resc
             patterns.append((days_list, hours_list))
 
         return patterns  # 如果有 preferred_groups，直接返回匹配模式
+
+    # ★ 特殊要求（Q2）：给定连排块模板(如 [4,4]/[3,4]/[8])，天灵活 → 枚举不同天分配，
+    #   绕过"每天≤2节"默认约束。仅当课程有特殊要求时才会传入 block_template。
+    if block_template:
+        import itertools
+        tmpl = list(block_template)
+        if sum(tmpl) == zxs and len(tmpl) <= base_days:
+            perms = set(itertools.permutations(tmpl))
+            for combo in itertools.combinations(range(base_days), len(tmpl)):
+                for perm in perms:
+                    patterns.append((list(combo), list(perm)))
+            if preferred_options:
+                allowed_days, _ = summarize_preferred_options(preferred_options)
+                patterns = [(d, h) for d, h in patterns if all(x in allowed_days for x in d)]
+        return patterns  # 特殊块模板直接返回，不走 ≤2 兜底
 
 # 没有 preferred_groups 时，先按 ZXS 生成，再用 preferred_options 把不合规的模式掐掉
     # 默认模式生成（ZXS规则）
@@ -357,7 +373,7 @@ def new_generate_day_patterns(zxs, days_of_week, time_constraints=None,flag_resc
                             patterns.append(([d1, d2], [split2, split1]))
 
     # ★ Issue #14 兜底过滤：所有模式严格每天 ≤ 2 节
-    patterns = [(days, hours) for (days, hours) in patterns if all(h <= 2 for h in hours)]
+    patterns = [(days, hours) for (days, hours) in patterns if all(h <= max_block for h in hours)]
 
 # 没有 preferred_groups 时，先按 ZXS 生成，再用 preferred_options 把不合规的模式掐掉（天必须在允许集合里，且每天学时不超过该天最长窗口长度）
 # ===== 在这里加入 preferred_options 过滤（上限约束）=====
@@ -370,8 +386,9 @@ def new_generate_day_patterns(zxs, days_of_week, time_constraints=None,flag_resc
                and all(h <= day2maxlen.get(d, 0) for d, h in zip(days, hours))
         ] #pattern 的所有天都必须在允许天集合里。且pattern 的每天学时 h 都必须 ≤ 该天允许的最大连续长度。
 
-    # ===== 全局兜底：禁止任一天连排节数 ≥4（覆盖 flag_reschedule 段的灵活回填）=====
-    patterns = [(days, hours) for (days, hours) in patterns if max(hours) <= 3]
+    # ===== 全局兜底：默认禁止任一天连排 ≥4；有特殊要求(max_block>2)时放宽到 max_block =====
+    _cap = max(3, max_block)
+    patterns = [(days, hours) for (days, hours) in patterns if max(hours) <= _cap]
 
     return patterns
 
