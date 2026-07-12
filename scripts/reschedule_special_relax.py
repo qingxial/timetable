@@ -1,66 +1,24 @@
 # -*- coding: utf-8 -*-
-"""特殊要求·约束放宽调课（Q2 · P4）——针对"完全失败"课程，在调课阶段继续救。
+"""特殊要求·统一优先级放宽调课（Q2）——首轮/调课共用 special_requirements.resolve_effective。
 
-核心：把所有课都排完。在冻结状态上，只对失败课按"分级放宽"再试排：
-  桶A 早上偏好被"全周1-2"类别禁排挡住 → L3 覆盖 L2：临时删掉该课那条被覆盖的禁排段，
-       按其自身 Prefer_Time 试排（基类课，整数 ZXS）。
-  桶B 仅周末+高学时(2连排装不下) → 小数分段 + >2连排：对该课的 @FA/@FB 虚班
-       （整数 ZXS、零残差）施加 block_template，把每段 ZXS 按周末天数均分成大块连排。
-       两段都排上且 Σ(节×周)==LLXS 守恒 → 提交，否则回滚。
-物理硬约束绝不放宽（不制造教师分身/教室双占）。事务性：排上即提交，排不上原样不动。
-每门课记录放宽了什么（喂 Q3 松弛记录）。
+不再分桶打补丁。对每门失败课调用同一条优先级解析规则 resolve_effective：
+  规则① 具体度优先：课程自身偏好(L3) 覆盖 摊在其行上的通用禁排(全周1-2=L2/周二5-8=L1)，删被覆盖段。
+  规则② 连排块 = 周学时 ÷ 可用偏好天：装得下 2 连排、天被压缩(周末)自动放大。
+只对"解析后确有变化(删了禁排/放大了连排)"的课再试排；结构上小数课排 @FA/@FB 分段(每段块守恒)。
+物理硬约束绝不放宽。事务性：排上即提交，排不上原样回滚。
 """
-import os, sys, argparse, pickle, re, math
+import os, sys, argparse, pickle, re
 from collections import defaultdict
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT); os.chdir(ROOT)
+sys.path.insert(0, ROOT); os.chdir(ROOT); sys.path.insert(0, 'scripts')
 import pandas as pd
 from Basic_Data import load_courses
 import utils1
 from utils1 import schedule_class, get_teacher_instances, get_class_instances1
 from local_reschedule_fractional import occupied_cells, clear_cells
+from special_requirements import resolve_effective, compute_block_template, _parse_pref_slots
 
 IDX2DAY = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
-WEEKDAYS = ['周一', '周二', '周三', '周四', '周五']
-A_PREF = re.compile(r'周[一二三四五六日]\(1-[24]节?\)')
-A_FORBID = [re.compile(r'全周\(1-2节?\)')]
-
-
-def pf(s):
-    return str(s or '').replace('（', '(').replace('）', ')').strip()
-
-
-def drop_forbid_segments(unav, drop_pats):
-    segs = [s for s in re.split(r'[;；]', pf(unav)) if s.strip()]
-    kept, dropped = [], []
-    for s in segs:
-        (dropped if any(p.search(s.replace(' ', '')) for p in drop_pats) else kept).append(s)
-    return ';'.join(kept), dropped
-
-
-def classify_failed(row):
-    pref = pf(row['Prefer_Time']); un = pf(row['unavailable_Time'])
-    try:
-        z = math.ceil(float(row['ZXS']))
-    except (TypeError, ValueError):
-        z = 0
-    if A_PREF.search(pref) and '全周(1-2' in un:
-        return 'A', z
-    wk = [d for d in ['周六', '周日'] if d in pref]
-    if wk and not any(d in pref for d in WEEKDAYS) and len(wk) * 2 < z:
-        return 'B', z
-    return 'C', z
-
-
-def weekend_days_of(pref):
-    return [d for d in ['周六', '周日'] if d in pf(pref)]
-
-
-def block_template_for(zxs_int, ndays):
-    """把整数 ZXS 按 ndays 天均分成大块，和=zxs（带余靠前）。"""
-    nd = ndays or 2
-    q, r = divmod(zxs_int, nd)
-    return [q + 1] * r + [q] * (nd - r)
 
 
 def main():
@@ -107,106 +65,89 @@ def main():
         fids = fids[:args.limit]
 
     placed, rows, relax_log = 0, [], []
-    bct = defaultdict(int); tried = defaultdict(int)
+    tried = 0
 
-    def place_base_A(jx, jxbs, row):
-        """桶A：删被覆盖的类别禁排段，按自身偏好排基类课。"""
-        c0 = jxbs[0]
-        bak_un = c0.unavailable_Time
-        new_un, dropped = drop_forbid_segments(c0.unavailable_Time, A_FORBID)
-        for j in jxbs:
-            j.unavailable_Time = new_un
-        room, arr, wks = schedule_class(str(c0.JXBID), courses, teachers, classes_all, classrooms,
-                                        flag_reschedule=True, num_days=args.days)
-        if room and arr:
-            for (day, period, hours) in arr:
-                rows.append({'教学班ID': base(jx), '虚班': '', '课程名称': c0.KCM, '教师号': c0.JSH,
-                             '周学时': c0.ZXS, '教室代码': room.JASDM, '教室': room.JASMC,
-                             '星期': IDX2DAY[day], '节次': f'第{period+1}-{period+hours}节',
-                             '周次数': len(wks) if wks else '', '放宽桶': 'A'})
-            return True, f'删类别禁排段(L3覆盖L2): {dropped}'
-        for j in jxbs:
-            j.unavailable_Time = bak_un
-        return False, f'删禁排后仍无可行位: {dropped}'
-
-    def place_frac_B(jx, row):
-        """桶B：对 @FA/@FB 虚班施加 block_template 在周末大块连排，事务提交/回滚。"""
-        b = base(jx)
-        vids = [b + '@FA', b + '@FB']
-        vids = [v for v in vids if v in new_by_id]
-        if not vids:
-            return False, '无@FA/@FB拆分，跳过'
-        wknd = weekend_days_of(row['Prefer_Time'])
-        # 每个虚班设块模板
-        for v in vids:
-            vc = new_by_id[v][0]
-            zi = int(round(float(vc.ZXS)))
-            tmpl = block_template_for(zi, len(wknd) or 2)
-            for j in new_by_id[v]:
-                j.max_block = max(tmpl)
-                j.block_template = ','.join(map(str, tmpl))
-        # 逐虚班试排
-        seg_rows, ok_all, got = [], True, 0
-        placed_v = []
-        T = None
-        try:
-            T = int(float(new_by_id[vids[0]][0].LLXS))
-        except (TypeError, ValueError):
-            T = None
-        for v in vids:
-            vc = new_by_id[v][0]
-            room, arr, wks = schedule_class(v, courses_new, teachers, classes_all, classrooms,
-                                            flag_reschedule=True, num_days=args.days)
-            if not (room and arr):
-                ok_all = False
-                break
-            placed_v.append(v)
-            for (day, period, hours) in arr:
-                got += hours * (len(wks) if wks else 0)
-                seg_rows.append({'教学班ID': b, '虚班': v.rsplit('@', 1)[1], '课程名称': vc.KCM,
-                                 '教师号': vc.JSH, '周学时': vc.ZXS, '教室代码': room.JASDM, '教室': room.JASMC,
-                                 '星期': IDX2DAY[day], '节次': f'第{period+1}-{period+hours}节',
-                                 '周次数': len(wks) if wks else '', '放宽桶': 'B'})
-        ok_all = ok_all and (T is None or got == T)
-        if ok_all:
-            rows.extend(seg_rows)
-            tmpls = {v: new_by_id[v][0].block_template for v in vids}
-            return True, f'小数分段+周末大连排 {tmpls} 守恒Σ={got}=LLXS{T}'
-        # 回滚已排虚班占位
-        for v in placed_v:
-            vjxbs = new_by_id[v]
-            vt = get_teacher_instances([j.JSH for j in vjxbs], teachers)
-            vc_ = get_class_instances1(vjxbs[0], classes_all, courses_new)
-            clear_cells(v, occupied_cells(vjxbs), room_by_dm, vt, vc_, vjxbs)
-        return False, f'@FA/@FB周末大连排仍无解或不守恒(got={got},T={T})'
+    def rec(jx, kcm, msg, ok):
+        relax_log.append({'教学班ID': base(jx), '课程名称': kcm, '放宽内容': msg,
+                          '结果': '✅已排入' if ok else '❌仍排不上'})
 
     for jx in fids:
         row = get_crow(jx)
         if row is None:
             continue
-        bucket, z = classify_failed(row)
-        bct[bucket] += 1
-        if bucket == 'C':
-            continue
-        tried[bucket] += 1
-        if bucket == 'A':
-            jxbs = by_id.get(jx) or by_id.get(base(jx))
+        eff = resolve_effective(row['Prefer_Time'], row['unavailable_Time'], row['ZXS'])
+        changed = bool(eff['dropped_forbids']) or eff['block_template'] is not None
+        if not changed:
+            continue   # 优先级解析对本课无能为力(纯数据问题) → 不试排
+        tried += 1
+        pref_days = sorted({d for d, _ in _parse_pref_slots(row['Prefer_Time'])})
+        b = base(jx)
+        vids = [v for v in (b + '@FA', b + '@FB') if v in new_by_id]
+
+        if vids:  # —— 小数课：排 @FA/@FB 分段(每段按可用天分大块，守恒) ——
+            for v in vids:
+                vc = new_by_id[v][0]
+                seg_mb, seg_tmpl = compute_block_template(float(vc.ZXS), len(pref_days) or 2)
+                for j in new_by_id[v]:
+                    j.unavailable_Time = eff['unavailable_time']
+                    j.max_block = seg_mb
+                    j.block_template = ','.join(map(str, seg_tmpl)) if seg_tmpl else ''
+            seg_rows, ok_all, got, placed_v = [], True, 0, []
+            try:
+                T = int(float(new_by_id[vids[0]][0].LLXS))
+            except (TypeError, ValueError):
+                T = None
+            for v in vids:
+                vc = new_by_id[v][0]
+                room, arr, wks = schedule_class(v, courses_new, teachers, classes_all, classrooms,
+                                                flag_reschedule=True, num_days=args.days)
+                if not (room and arr):
+                    ok_all = False; break
+                placed_v.append(v)
+                for (day, period, hours) in arr:
+                    got += hours * (len(wks) if wks else 0)
+                    seg_rows.append({'教学班ID': b, '虚班': v.rsplit('@', 1)[1], '课程名称': vc.KCM,
+                                     '教师号': vc.JSH, '周学时': vc.ZXS, '教室代码': room.JASDM, '教室': room.JASMC,
+                                     '星期': IDX2DAY[day], '节次': f'第{period+1}-{period+hours}节',
+                                     '周次数': len(wks) if wks else '', '放宽桶': 'B'})
+            ok_all = ok_all and (T is None or got == T)
+            if ok_all:
+                rows.extend(seg_rows); placed += 1
+                rec(jx, new_by_id[vids[0]][0].KCM,
+                    f"小数分段+连排放宽 守恒Σ={got}=LLXS{T}", True)
+            else:
+                for v in placed_v:
+                    vj = new_by_id[v]
+                    vt = get_teacher_instances([j.JSH for j in vj], teachers)
+                    vc_ = get_class_instances1(vj[0], classes_all, courses_new)
+                    clear_cells(v, occupied_cells(vj), room_by_dm, vt, vc_, vj)
+                rec(jx, new_by_id[vids[0]][0].KCM, f"@FA/@FB放宽后仍无解或不守恒(got={got},T={T})", False)
+        else:  # —— 整数课：删被覆盖禁排 + 生效连排块，排基类 ——
+            jxbs = by_id.get(jx) or by_id.get(b)
             if not jxbs:
                 continue
-            ok, msg = place_base_A(jx, jxbs, row)
-            kcm = jxbs[0].KCM
-        else:
-            ok, msg = place_frac_B(jx, row)
-            kcm = (new_by_id.get(base(jx) + '@FA') or new_by_id.get(base(jx) + '@FB') or [None])[0]
-            kcm = kcm.KCM if kcm else ''
-        if ok:
-            placed += 1
-        relax_log.append({'教学班ID': base(jx), '课程名称': kcm, '放宽桶': bucket,
-                          '放宽内容': msg, '结果': '✅已排入' if ok else '❌仍排不上'})
+            c0 = jxbs[0]
+            bak = (c0.unavailable_Time, getattr(c0, 'max_block', None), getattr(c0, 'block_template', None))
+            for j in jxbs:
+                j.unavailable_Time = eff['unavailable_time']
+                j.max_block = eff['max_block']
+                j.block_template = ','.join(map(str, eff['block_template'])) if eff['block_template'] else ''
+            room, arr, wks = schedule_class(str(c0.JXBID), courses, teachers, classes_all, classrooms,
+                                            flag_reschedule=True, num_days=args.days)
+            if room and arr:
+                placed += 1
+                for (day, period, hours) in arr:
+                    rows.append({'教学班ID': b, '虚班': '', '课程名称': c0.KCM, '教师号': c0.JSH,
+                                 '周学时': c0.ZXS, '教室代码': room.JASDM, '教室': room.JASMC,
+                                 '星期': IDX2DAY[day], '节次': f'第{period+1}-{period+hours}节',
+                                 '周次数': len(wks) if wks else '', '放宽桶': 'A'})
+                rec(jx, c0.KCM, f"删被覆盖禁排段{eff['dropped_forbids']} + 连排块{eff['block_template'] or '2'}", True)
+            else:
+                for j in jxbs:
+                    j.unavailable_Time = bak[0]
+                rec(jx, c0.KCM, f"删禁排{eff['dropped_forbids']}后仍无可行位", False)
 
-    print(f'\n=== 分桶(全部失败课) ===  A={bct["A"]} B={bct["B"]} C={bct["C"]}')
-    print(f'=== 结果 ===  新排入 {placed} 门 / 尝试 {tried["A"]+tried["B"]} 门 (A试{tried["A"]} B试{tried["B"]})')
-
+    print(f'\n=== 统一优先级放宽 ===  解析有变化并试排 {tried} 门, 新排入 {placed} 门')
     if not args.dry_run:
         pd.DataFrame(rows).to_excel('排课结果/特殊要求放宽排入明细.xlsx', index=False)
         pd.DataFrame(relax_log).to_excel('排课结果/特殊要求放宽记录.xlsx', index=False)

@@ -203,6 +203,111 @@ def resolve(specs: List[RequirementSpec]) -> Optional[RequirementSpec]:
     return top[0]
 
 
+# ==========================================================================
+# 统一优先级解析 resolve_effective（Q2 高屋建瓴版）——首轮排课与调课共用同一规则
+# --------------------------------------------------------------------------
+# 一条原理，两条规则，适用于每一门课（不再分桶打补丁）：
+#   规则① 具体度优先：课程自身 Prefer_Time = L3（最具体）；摊在其行上的通用禁排
+#          (全周1-2=L2类别 / 周二5-8=L1全校) 更粗。冲突→具体者胜→就地解除被覆盖的禁排段。
+#   规则② 连排块 = 周学时 ÷ 可用天：装得下 2 连排；天被压缩(如仅周末)则放大到 4/3 连排。
+# ==========================================================================
+import math as _math
+
+# 已知"摊平在每行禁排列"的通用禁排 → 级别
+_FLAT_FORBID_LEVEL = [
+    (re.compile(r'周二\(?5-8节?\)?'), L_SCHOOL),     # 全校级
+    (re.compile(r'全周\(?1-2节?\)?'), L_CATEGORY),   # 类别级(体育早上)
+]
+
+
+def _norm2(s):
+    return str(s or '').replace('（', '(').replace('）', ')').strip()
+
+
+def _parse_pref_slots(prefer_time):
+    """Prefer_Time → [(day_idx, set(1-based periods))]。支持 周X(a-b节)/周X全天/全周(a-b节)。"""
+    out = []
+    for seg in re.split(r'[;；、]', _norm2(prefer_time)):
+        seg = seg.strip()
+        if not seg:
+            continue
+        m = re.match(r'^周([一二三四五六日])\((\d+)-(\d+)节?\)$', seg)
+        if m:
+            out.append((DAY2IDX['周' + m.group(1)], set(range(int(m.group(2)), int(m.group(3)) + 1)))); continue
+        m = re.match(r'^周([一二三四五六日])全天$', seg)
+        if m:
+            out.append((DAY2IDX['周' + m.group(1)], set(range(1, 12)))); continue
+        m = re.match(r'^全周\((\d+)-(\d+)节?\)$', seg)
+        if m:
+            for d in range(5):
+                out.append((d, set(range(int(m.group(1)), int(m.group(2)) + 1))))
+    return out
+
+
+def _forbid_seg_level(seg):
+    for pat, lv in _FLAT_FORBID_LEVEL:
+        if pat.search(seg.replace(' ', '')):
+            return lv
+    return None  # 未识别 → 视作课程自有禁排(同级)，保留
+
+
+def _forbid_seg_cells(seg):
+    seg = _norm2(seg)
+    m = re.match(r'^周([一二三四五六日])\((\d+)-(\d+)节?\)$', seg)
+    if m:
+        d = DAY2IDX['周' + m.group(1)]
+        return {(d, p) for p in range(int(m.group(2)), int(m.group(3)) + 1)}
+    m = re.match(r'^全周\((\d+)-(\d+)节?\)$', seg)
+    if m:
+        return {(d, p) for d in range(5) for p in range(int(m.group(1)), int(m.group(2)) + 1)}
+    m = re.match(r'^周([一二三四五六日])全天$', seg)
+    if m:
+        d = DAY2IDX['周' + m.group(1)]
+        return {(d, p) for p in range(1, 12)}
+    return set()
+
+
+def compute_block_template(hours, ndays):
+    """规则②：把 hours 节按 ndays 天均分成连排块（带余靠前），返回 (max_block, template)。
+    装得下(≤2/天)则返回 (2, None) 保持默认。"""
+    hours = int(_math.ceil(hours)); nd = max(1, ndays)
+    if nd * 2 >= hours:
+        return 2, None
+    q, r = divmod(hours, nd)
+    tmpl = [q + 1] * r + [q] * (nd - r)
+    return max(tmpl), tmpl
+
+
+def resolve_effective(prefer_time, unavailable_time, zxs):
+    """对一门课解析出"生效约束"。首轮排课与调课共用。
+    返回 {prefer_time, unavailable_time, max_block, block_template, dropped_forbids}。"""
+    pref_slots = _parse_pref_slots(prefer_time)
+    pref_cells = {(d, p) for d, ps in pref_slots for p in ps}
+    pref_days = sorted({d for d, _ in pref_slots})
+
+    # 规则① 具体度优先：删被自身偏好(L3)覆盖的低级禁排段
+    kept, dropped = [], []
+    for seg in [s for s in re.split(r'[;；]', _norm2(unavailable_time)) if s.strip()]:
+        lv = _forbid_seg_level(seg)
+        if lv is not None and lv < L_TEACHER and (_forbid_seg_cells(seg) & pref_cells):
+            dropped.append(seg)
+        else:
+            kept.append(seg)
+    new_un = ';'.join(kept)
+
+    # 规则② 连排块 = 周学时 ÷ 可用偏好天
+    mb, tmpl = 2, None
+    try:
+        z = float(zxs)
+    except (TypeError, ValueError):
+        z = 0
+    if pref_days and z > 0:
+        mb, tmpl = compute_block_template(z, len(pref_days))
+
+    return {'prefer_time': _norm2(prefer_time), 'unavailable_time': new_un,
+            'max_block': mb, 'block_template': tmpl, 'dropped_forbids': dropped}
+
+
 if __name__ == '__main__':
     import os, sys
     ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

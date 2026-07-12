@@ -16,7 +16,7 @@ import os, sys, re, argparse
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT); os.chdir(ROOT); sys.path.insert(0, 'scripts')
 import pandas as pd
-from special_requirements import classify, resolve, DAY2IDX, L_SCHOOL, L_CATEGORY
+from special_requirements import classify, resolve, resolve_effective, DAY2IDX, L_SCHOOL, L_CATEGORY
 
 CONV = '智能排课基础数据/提取的基础数据表_converted'
 SRC = f'{CONV}/课程表_split_merged.xlsx'
@@ -102,49 +102,35 @@ def process(demo=False):
 
     changes = []
     for i, r in df.iterrows():
-        pk = norm(r.get('PKYQMS'))
-        if not pk or pk.lower() in ('nan', 'none'):
-            continue
-        specs = classify(pk, r.get('KCLB', ''), r.get('JSH', ''))
-        top = resolve(specs)
-        if top is None or not top.allowed_days:
-            continue
-        W = top.level
-        wanted = want_cells(top)
-
-        # ② 连排块 → max_block/block_template
-        blocks, mb = block_template_of(top)
-        if mb > 2:
-            df.at[i, 'max_block'] = str(mb)
-            df.at[i, 'block_template'] = ','.join(map(str, blocks))
-        # ① 回写 Prefer_Time 为绑定组：仅当"需要>2连排"或"当前为空"时才写，
-        #    避免覆盖已填好且正常工作的存量偏好(零回归)。
-        grp = top.to_group_str()
         old_pref = norm(r.get('Prefer_Time'))
-        wrote_pref = ''
-        if grp and (mb > 2 or not old_pref or old_pref.lower() in ('nan', 'none')):
-            df.at[i, 'Prefer_Time'] = grp
-            wrote_pref = grp
-        # ③ 外科减法：删掉被更高级要求覆盖的低级禁排段
-        un = norm(r.get('unavailable_Time'))
-        segs = [s for s in re.split(r'[;；]', un) if s.strip()]
-        kept, dropped = [], []
-        for s in segs:
-            lv = seg_level(s)
-            if lv is not None and lv < W and (seg_cells(s) & wanted):
-                dropped.append(s)          # 被 L{W} 覆盖，删
-            else:
-                kept.append(s)
-        if dropped:
-            df.at[i, 'unavailable_Time'] = ';'.join(kept)
-        if wrote_pref or dropped or mb > 2:
-            changes.append({
-                'JXBID': r.get('JXBID'), '课程名称': r.get('KCM'), 'KCLB': r.get('KCLB'),
-                '生效级别': f'L{W}', '生效作用域': f'{top.scope}:{top.scope_key}',
-                'PKYQMS': pk, '回写Prefer_Time': wrote_pref or old_pref,
-                'max_block': df.at[i, 'max_block'], 'block_template': df.at[i, 'block_template'],
-                '删除的低级禁排': ';'.join(dropped), '保留禁排': ';'.join(kept) if dropped else '',
-            })
+        # 若 Prefer_Time 为空但 PKYQMS 有结构化要求 → 先翻成绑定组填入(把 PKYQMS 变成 L3 偏好)
+        if (not old_pref or old_pref.lower() in ('nan', 'none')):
+            pk = norm(r.get('PKYQMS'))
+            if pk and pk.lower() not in ('nan', 'none'):
+                top = resolve(classify(pk, r.get('KCLB', ''), r.get('JSH', '')))
+                grp = top.to_group_str() if top else ''
+                if grp:
+                    df.at[i, 'Prefer_Time'] = grp
+                    old_pref = grp
+
+        # ★ 统一优先级解析 resolve_effective：对每门课都跑同一规则（首轮/调课共用）
+        #   规则① 自身偏好(L3) 覆盖 摊平的低级禁排(全周1-2/周二5-8) → 删被覆盖段
+        #   规则② 连排块 = 周学时 ÷ 可用偏好天 → max_block/block_template
+        eff = resolve_effective(old_pref, r.get('unavailable_Time'), r.get('ZXS'))
+        changed = bool(eff['dropped_forbids']) or eff['block_template'] is not None
+        if not changed:
+            continue   # 普通课零改动
+        df.at[i, 'unavailable_Time'] = eff['unavailable_time']
+        if eff['block_template'] is not None:
+            df.at[i, 'max_block'] = str(eff['max_block'])
+            df.at[i, 'block_template'] = ','.join(map(str, eff['block_template']))
+        changes.append({
+            'JXBID': r.get('JXBID'), '课程名称': r.get('KCM'), 'KCLB': r.get('KCLB'),
+            '生效偏好(L3)': old_pref,
+            'max_block': df.at[i, 'max_block'], 'block_template': df.at[i, 'block_template'],
+            '删除的低级禁排(被L3覆盖)': ';'.join(eff['dropped_forbids']),
+            '生效禁排': eff['unavailable_time'],
+        })
 
     # 保留双行表头写回
     with pd.ExcelWriter(OUT, engine='openpyxl') as w:
@@ -159,7 +145,7 @@ def process(demo=False):
     print(f'  产出: {OUT}')
     print(f'  变更记录: {LOG}  受影响门数: {len(changes)}')
     if len(chg):
-        print('  其中触发"外科减法"(高级覆盖低级禁排)的:', (chg['删除的低级禁排'].astype(str).str.strip() != '').sum())
+        print('  触发"外科减法"(L3覆盖低级禁排)的:', (chg['删除的低级禁排(被L3覆盖)'].astype(str).str.strip() != '').sum())
         print('  设了非2连排(max_block>2)的:', (chg['max_block'].astype(str).str.strip() != '').sum())
     return chg
 

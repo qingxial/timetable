@@ -63,6 +63,11 @@ class Course:
     # 虚班拆分（Issue #14）：奇数 ZXS 拆 @W/@B 两条记录，paired_jxbid 指向另一条
     paired_jxbid: Optional[str] = None
 
+    # 特殊要求·统一优先级解析产物（Q2）：由 apply_special_requirements.resolve_effective 写入课程表列，
+    #   max_block=每天连排上限(默认2)、block_template="4,4" 等连排块模板；schedule_class 读取以放宽连排。
+    max_block: Optional[str] = None
+    block_template: Optional[str] = None
+
     timetable: np.ndarray = field(init=False)
     # 已排上的星期集合（用于 LCV "避同天" 软约束查询，O(1) 命中）
     scheduled_days: set = field(init=False)

@@ -36,11 +36,15 @@ def main():
     spec = rd(f'{RES}/特殊要求放宽记录.xlsx')
     if spec is not None:
         for _, r in spec.iterrows():
-            bucket = str(r.get('放宽桶', ''))
-            typ = '类别禁排覆盖(L3>L2)' if bucket == 'A' else ('连排放宽+小数分段' if bucket == 'B' else '特殊放宽')
-            tie = 'L3任课/教学班 覆盖 L2类别禁排' if bucket == 'A' else '按周末天数分大块·守恒零残差'
+            info = str(r.get('放宽内容', ''))
+            if '小数分段' in info or 'FA' in info or '守恒' in info:
+                typ, tie = '连排放宽+小数分段', '按可用天分大块·守恒零残差'
+            elif '删' in info and '禁排' in info:
+                typ, tie = '类别禁排覆盖(L3>L2)', 'L3自身偏好 覆盖 低级摊平禁排'
+            else:
+                typ, tie = '特殊放宽', '统一优先级解析'
             rows.append({'教学班ID': r['教学班ID'], '课程名称': r.get('课程名称', ''), '松弛类型': typ,
-                         '级别取舍': tie, '详情': r.get('放宽内容', ''), '结果': r.get('结果', '')})
+                         '级别取舍': tie, '详情': info, '结果': r.get('结果', '')})
 
     led = pd.DataFrame(rows, columns=COLS)
     out = f'{RES}/软约束松弛总记录.xlsx'
