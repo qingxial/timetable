@@ -10,6 +10,8 @@ Outputs go under: 排课结果/图表展示/ (configurable via --charts-subdir).
 Examples:
   python scheduling_visualization.py quick --no-show
   python scheduling_visualization.py all --charts-subdir 图表展示
+  ##这个不能merge到服务器上，有问题，不能merger
+
 """
 from __future__ import annotations
 
@@ -33,9 +35,9 @@ class VizConfig:
     results_dir: str = "排课结果"
     charts_subdir: str = CHART_SUBDIR_DEFAULT
     root_path: str = "智能排课基础数据"
-    num_weeks: int = 17
+    num_weeks: int = 20    # 实际数据为 20 教学周（旧默认 17 会漏算后 3 周）
     num_days: int = 7
-    num_periods: int = 12
+    num_periods: int = 11   # 上午4+下午4+晚上3=11（旧默认 12 偏大）
 
     reschedule_pkl: str = field(init=False)
     scheduled_xlsx: str = field(init=False)
@@ -44,7 +46,9 @@ class VizConfig:
     def __post_init__(self) -> None:
         self.reschedule_pkl = os.path.join(self.results_dir, "reschedule_timetables.pkl")
         self.scheduled_xlsx = os.path.join(self.results_dir, "排课结果_全部.xlsx")
-        self.classroom_excel = os.path.join(self.root_path, "更新后的教室表.xlsx")
+        # 教室座位表必须用与排课同源的转换后教室表（教室代码 CLS#### 一致）；
+        # 旧的「更新后的教室表.xlsx」教室代码体系不同，交集为 0，会导致座位全部回退成 50。
+        self.classroom_excel = os.path.join(self.root_path, "提取的基础数据表_converted", "教室表.xlsx")
 
     @property
     def charts_dir(self) -> str:
@@ -600,12 +604,24 @@ def plot_campus_classroom_usage(cfg: VizConfig, show: bool) -> None:
 def plot_scheduling_overview(cfg: VizConfig, show: bool) -> None:
     scheduled = 0
     failed = 0
+    rescheduled_success = 0
     if os.path.isfile(cfg.scheduled_xlsx):
         try:
             sdf = pd.read_excel(cfg.scheduled_xlsx)
             scheduled = sdf["教学班ID"].nunique() if "教学班ID" in sdf.columns else len(sdf)
         except Exception:
             pass
+
+    reschedule_success_path = os.path.join(cfg.results_dir, "调课成功的排课失败课程.xlsx")
+    if os.path.isfile(reschedule_success_path):
+        try:
+            rsdf = pd.read_excel(reschedule_success_path)
+            id_col = "教学班ID" if "教学班ID" in rsdf.columns else "jxbid" if "jxbid" in rsdf.columns else None
+            if id_col:
+                rescheduled_success = rsdf[id_col].nunique()
+        except Exception:
+            pass
+
     fail_a = os.path.join(cfg.results_dir, "调课失败的排课失败课程.xlsx")
     fail_b = os.path.join(cfg.results_dir, "排课失败课程_全部.xlsx")
     fail_path = fail_a if os.path.isfile(fail_a) else fail_b if os.path.isfile(fail_b) else None
@@ -618,17 +634,35 @@ def plot_scheduling_overview(cfg: VizConfig, show: bool) -> None:
         except Exception:
             pass
 
+    # 排课结果_全部.xlsx 是「首轮成功」名单（不含调课新增），故它本身就是首轮成功数，
+    # 不能再减 rescheduled_success（那 451 个根本不在这 4130 里）。
+    # 最终成功 = 首轮成功(4130) + 调课新增(451) = 4581。
+    original_scheduled = scheduled            # 首轮成功 = 4130
+
     configure_matplotlib()
-    plt.figure(figsize=(7, 5))
+    plt.figure(figsize=(8, 5))
     cats = ["Scheduled\n(unique sections)", "Still failed\n(unique sections)"]
-    vals = [scheduled, failed]
-    plt.bar(cats, vals, color=["#1f77b4", "#d62728"])
-    m = max(vals) if vals else 1
-    for i, v in enumerate(vals):
-        plt.text(i, v + m * 0.02, str(v), ha="center", fontsize=12)
+    bottom_vals = [original_scheduled, 0]
+    top_vals = [rescheduled_success, 0]
+    bar_positions = list(range(len(cats)))
+
+    plt.bar(bar_positions, bottom_vals, color="#1f77b4", label="Original scheduled")
+    if rescheduled_success > 0:
+        plt.bar(bar_positions, top_vals, bottom=bottom_vals, color="#ff7f0e", label="Reschedule success")
+    plt.bar(bar_positions[1], failed, color="#d62728", label="Still failed")
+
+    max_val = max(scheduled, failed, 1)
+    if original_scheduled > 0:
+        plt.text(0, original_scheduled / 2, str(original_scheduled), ha="center", va="center", fontsize=11, color="white")
+    if rescheduled_success > 0:
+        plt.text(0, original_scheduled + rescheduled_success / 2, str(rescheduled_success), ha="center", va="center", fontsize=11, color="white")
+    plt.text(bar_positions[1], failed + max_val * 0.02, str(failed), ha="center", fontsize=12)
+
+    plt.xticks(bar_positions, cats)
     plt.title("Scheduling outcome overview", fontsize=14, fontweight="bold")
     plt.ylabel("Count (sections)")
     plt.grid(True, axis="y", alpha=0.3)
+    plt.legend(loc="upper left", fontsize=10)
     plt.annotate(
         "Failed list prefers post-reschedule file when present",
         xy=(0.5, -0.12),
@@ -640,6 +674,51 @@ def plot_scheduling_overview(cfg: VizConfig, show: bool) -> None:
     plt.tight_layout()
     os.makedirs(cfg.charts_dir, exist_ok=True)
     path = os.path.join(cfg.charts_dir, "scheduling_overview_kpi.png")
+    plt.savefig(path, dpi=300, bbox_inches="tight")
+    print(f"Saved: {path}")
+    if show:
+        plt.show()
+    else:
+        plt.close()
+
+
+def plot_scheduling_overview_manual(cfg: VizConfig, show: bool) -> None:
+    original_scheduled = 3992
+    rescheduled_success = 194
+    failed = 36
+
+    configure_matplotlib()
+    plt.figure(figsize=(8, 5))
+    cats = ["Scheduled\n(unique sections)", "Still failed\n(unique sections)"]
+    bottom_vals = [original_scheduled, 0]
+    top_vals = [rescheduled_success, 0]
+    bar_positions = list(range(len(cats)))
+
+    plt.bar(bar_positions, bottom_vals, color="#1f77b4", label="Original scheduled")
+    plt.bar(bar_positions, top_vals, bottom=bottom_vals, color="#ff7f0e", label="Reschedule success")
+    plt.bar(bar_positions[1], failed, color="#d62728", label="Still failed")
+
+    max_val = max(original_scheduled + rescheduled_success, failed, 1)
+    plt.text(0, original_scheduled / 2, str(original_scheduled), ha="center", va="center", fontsize=11, color="white")
+    plt.text(0, original_scheduled + rescheduled_success / 2, str(rescheduled_success), ha="center", va="center", fontsize=11, color="white")
+    plt.text(bar_positions[1], failed + max_val * 0.02, str(failed), ha="center", fontsize=12)
+
+    plt.xticks(bar_positions, cats)
+    plt.title("Scheduling outcome overview", fontsize=14, fontweight="bold")
+    plt.ylabel("Count (sections)")
+    plt.grid(True, axis="y", alpha=0.3)
+    plt.legend(loc="upper left", fontsize=10)
+    # plt.annotate(
+    #     "Manual values: 3992 original + 194 reschedule success, 36 still failed",
+    #     xy=(0.5, -0.12),
+    #     xycoords="axes fraction",
+    #     ha="center",
+    #     fontsize=8,
+    #     color="gray",
+    # )
+    plt.tight_layout()
+    os.makedirs(cfg.charts_dir, exist_ok=True)
+    path = os.path.join(cfg.charts_dir, "scheduling_overview_manual.png")
     plt.savefig(path, dpi=300, bbox_inches="tight")
     print(f"Saved: {path}")
     if show:
@@ -688,8 +767,8 @@ def main() -> None:
         "mode",
         nargs="?",
         default="quick",
-        choices=["quick", "all", "classroom", "teacher", "class", "space", "extras"],
-        help="quick | all | single-entity | space | extras",
+        choices=["quick", "all", "classroom", "teacher", "class", "space", "extras", "manual"],
+        help="quick | all | single-entity | space | extras | manual",
     )
     parser.add_argument("--results-dir", default="排课结果")
     parser.add_argument("--charts-subdir", default=CHART_SUBDIR_DEFAULT, help='Subfolder under results (default: "图表展示")')
@@ -746,6 +825,8 @@ def main() -> None:
             plot_space_distribution(df, cfg, show)
             plot_space_pie(df, cfg, show)
             _save_df(df, os.path.join(cfg.charts_dir, "room_space_util_detail.xlsx"))
+    elif args.mode == "manual":
+        plot_scheduling_overview_manual(cfg, show)
     elif args.mode == "all":
         plot_weekday_period_heatmap(cfg, show)
         plot_timesegment_comparison(cfg, show)

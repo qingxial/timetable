@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLM增强的启发式贪心智能排课算法 — 中期进展报告</title>
+<script>
+window.MathJax={tex:{inlineMath:[['$','$']],displayMath:[['$$','$$']]},svg:{fontCache:'global'}};
+</script>
+<!-- 本地 MathJax（SVG 输出，字形以矢量路径内嵌，离线可渲染、无需联网与字体文件） -->
+<script src="vendor/mathjax/tex-mml-svg.js" id="MathJax-script" async></script>
+<style>
+  :root{
+    --ink:#16202e;--muted:#5d6b7e;--line:#e4e8f0;--accent:#23547e;--accent2:#0e7c69;
+    --soft:#f5f8fc;--warn:#b1631c;--good:#0e7c69;--gold:#9a7b1f;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",Helvetica,sans-serif;
+    color:var(--ink);line-height:1.85;margin:0;background:#e9edf3;font-size:16px}
+  .page{max-width:960px;margin:0 auto;background:#fff;padding:60px 78px;
+    box-shadow:0 1px 28px rgba(20,30,50,.09)}
+
+  header.cover{text-align:center;padding-bottom:30px;margin-bottom:34px;
+    border-bottom:3px solid var(--accent)}
+  .cover .tag{color:var(--accent2);font-weight:600;letter-spacing:4px;font-size:13px}
+  .cover h1{font-size:28px;margin:16px 0 8px;line-height:1.45}
+  .cover .sub{color:var(--muted);font-size:15px}
+  .meta{display:flex;justify-content:center;gap:30px;flex-wrap:wrap;margin-top:20px;
+    font-size:14px;color:var(--muted)}
+  .meta b{color:var(--ink);font-weight:600}
+
+  /* 目录 */
+  .toc{background:var(--soft);border:1px solid var(--line);border-radius:12px;
+    padding:22px 30px;margin:30px 0}
+  .toc h3{margin:0 0 12px;color:var(--accent);font-size:16px;letter-spacing:1px}
+  .toc h3::before{content:""}
+  .toc ol{list-style:none;padding:0;margin:0;counter-reset:toc}
+  .toc li{margin:5px 0;font-size:14.5px}
+  .toc>ol>li{counter-increment:toc;font-weight:600}
+  .toc>ol>li::before{content:counter(toc,cjk-ideographic)"、";color:var(--accent2)}
+  .toc a{color:var(--ink);text-decoration:none;border-bottom:1px dotted transparent}
+  .toc a:hover{color:var(--accent);border-bottom-color:var(--accent)}
+  .toc ul{list-style:none;padding-left:22px;margin:4px 0 8px;font-weight:400}
+  .toc ul li{color:var(--muted);font-size:13.5px}
+
+  .abstract{background:linear-gradient(135deg,#f0f6fb,#eef7f3);border:1px solid var(--line);
+    border-radius:12px;padding:22px 28px;margin:26px 0}
+  .abstract h3{margin:0 0 8px;color:var(--accent);font-size:15px;letter-spacing:2px}
+  .abstract h3::before{content:""}
+  .abstract p{margin:8px 0;text-align:justify;font-size:15.5px}
+  .abstract b{color:var(--accent)}
+
+  h2{font-size:21px;margin:50px 0 18px;padding:8px 0 8px 16px;border-left:5px solid var(--accent);
+    color:var(--accent);background:linear-gradient(90deg,#f4f8fc,transparent);scroll-margin-top:20px}
+  h2 .num{color:var(--accent2);font-weight:700;margin-right:8px}
+  h3{font-size:16.5px;margin:28px 0 10px;scroll-margin-top:20px}
+  h3::before{content:"▍";color:var(--accent2);margin-right:6px}
+  p{margin:11px 0;text-align:justify}
+  ul,ol{padding-left:24px}li{margin:7px 0}
+  strong{color:var(--ink)}
+  sup{color:var(--accent);font-size:12px}
+
+  .pill{display:inline-block;background:#eaf2fa;color:var(--accent);border-radius:20px;
+    padding:2px 13px;font-size:13px;margin:3px 5px 3px 0}
+  .box{background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:16px 22px;margin:18px 0}
+  .box.accent{border-left:4px solid var(--accent2)}
+  .box.gold{border-left:4px solid var(--gold);background:#fdfaf0}
+
+  .twocol{display:flex;gap:18px;flex-wrap:wrap;margin:18px 0}
+  .twocol .c{flex:1;min-width:240px;background:var(--soft);border:1px solid var(--line);
+    border-radius:10px;padding:16px 20px}
+  .twocol .c h4{margin:0 0 8px;color:var(--accent);font-size:15px}
+
+  .formula{background:#fbfcfe;border:1px solid var(--line);border-left:3px solid var(--accent2);
+    border-radius:8px;padding:6px 18px;margin:16px 0;overflow-x:auto}
+  .fcap{font-size:13px;color:var(--muted);margin:-6px 0 16px 4px}
+
+  .stat-row{display:flex;gap:14px;flex-wrap:wrap;margin:22px 0}
+  .stat{flex:1;min-width:130px;background:linear-gradient(160deg,#fff,#f4f8fc);
+    border:1px solid var(--line);border-radius:12px;padding:16px 14px;text-align:center}
+  .stat .n{font-size:25px;font-weight:700;color:var(--accent2);line-height:1.1}
+  .stat .l{font-size:12.5px;color:var(--muted);margin-top:6px}
+
+  .flow{display:flex;flex-wrap:wrap;margin:22px 0}
+  .flow .step{flex:1;min-width:150px;background:var(--soft);border:1px solid var(--line);
+    border-radius:10px;padding:14px;position:relative;margin:6px}
+  .flow .step .s-no{position:absolute;top:-10px;left:14px;background:var(--accent);color:#fff;
+    width:24px;height:24px;border-radius:50%;font-size:13px;font-weight:700;
+    display:flex;align-items:center;justify-content:center}
+  .flow .step .s-t{font-weight:600;margin:8px 0 4px;font-size:14.5px}
+  .flow .step .s-d{font-size:12.5px;color:var(--muted);line-height:1.6}
+  .flow .step.llm{border-color:#bfe0d8;background:#f0f9f6}
+  .flow .step.llm .s-no{background:var(--accent2)}
+
+  table{border-collapse:collapse;width:100%;margin:18px 0;font-size:14px}
+  th,td{border:1px solid var(--line);padding:9px 12px;vertical-align:top}
+  th{background:var(--accent);color:#fff;font-weight:600;text-align:left}
+  tbody tr:nth-child(even){background:var(--soft)}
+  td.lab{font-weight:600;white-space:nowrap}
+  td.center{text-align:center}
+  .tag-done{display:inline-block;background:#e3f3ee;color:var(--good);border-radius:5px;
+    padding:1px 9px;font-size:12.5px;font-weight:600;white-space:nowrap}
+  .tag-prog{display:inline-block;background:#fbf1e3;color:var(--warn);border-radius:5px;
+    padding:1px 9px;font-size:12.5px;font-weight:600;white-space:nowrap}
+  .best{color:var(--good);font-weight:700}.bad{color:var(--warn);font-weight:600}
+
+  .timeline{border-left:2px solid var(--line);margin:20px 0;padding-left:26px}
+  .timeline .item{position:relative;margin-bottom:20px}
+  .timeline .item::before{content:"";position:absolute;left:-33px;top:5px;width:13px;height:13px;
+    border-radius:50%;background:var(--accent);border:3px solid #fff;box-shadow:0 0 0 1px var(--line)}
+  .timeline .now::before{background:var(--warn)}.timeline .done::before{background:var(--good)}
+  .timeline .t{font-weight:600}
+  .timeline .when{font-size:12.5px;color:var(--accent);font-weight:600;margin-left:8px}
+
+  figure{margin:20px 0}
+  figure img{width:100%;border:1px solid var(--line);border-radius:8px;background:#fff;display:block}
+  figcaption{font-size:12.5px;color:var(--muted);margin-top:8px;text-align:center}
+  .fig-2{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+  .fig-2 figure{flex:1;min-width:280px;margin:8px 0}
+  @media print{figure,.fig-2 figure{break-inside:avoid}}
+
+  ol.refs{padding-left:30px;font-size:13.5px;color:var(--ink);line-height:1.75}
+  ol.refs li{margin:8px 0;text-align:justify;padding-left:4px}
+  ol.refs li::marker{color:var(--accent2);font-weight:600}
+
+  .footnote{font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);
+    margin-top:50px;padding-top:18px}
+  @media print{body{background:#fff}.page{box-shadow:none;padding:0 6px}
+    .flow .step,.formula,table{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="cover">
+  <div class="tag">硕士研究生学位论文 · 中期进展报告</div>
+  <h1>LLM增强的启发式贪心智能排课算法<br>——以西安交通大学排课为例</h1>
+  <div class="sub">统计学 · 数学与统计学院</div>
+  <div class="meta">
+    <span>姓名 <b>李清霞</b></span>
+    <span>学号 <b>3124107086</b></span>
+    <span>导师 <b>张讲社</b></span>
+    <span>汇报日期 <b>2026 年 6 月</b></span>
+  </div>
+</header>
+
+<!-- 目录 -->
+<nav class="toc">
+  <h3>目　录</h3>
+  <ol>
+    <li><a href="#s0">研究内容简介</a></li>
+    <li><a href="#s1">选题的科学依据</a></li>
+    <li><a href="#s2">国内外研究动态</a></li>
+    <li><a href="#s3">研究目标与研究内容</a></li>
+    <li><a href="#s4">研究进展情况</a>
+      <ul>
+        <li>4.1　理论进展：问题形式化与算法设计</li>
+        <li>4.2　框架完成度：系统模块实现情况</li>
+        <li>4.3　已完成的实验：真实数据集验证与策略对比</li>
+      </ul>
+    </li>
+    <li><a href="#s5">下一步的工作计划</a></li>
+    <li><a href="#ref">参考文献</a></li>
+  </ol>
+</nav>
+
+<!-- 总的介绍 -->
+<section class="abstract" id="s0">
+  <h3>研究内容简介</h3>
+  <p>课程排课是高校教学管理的核心难题，其本质是在多重硬、软约束下对教室、教师、时间段等有限资源进行组合分配的优化问题，已被证明为 NP-hard 问题。传统方法在大规模、强约束的真实场景下难以兼顾求解效率与可行性；而排课需求多以自然语言形式表达，其结构化解析长期依赖人工干预，制约了系统的可用性与适应性。</p>
+  <p>本研究提出一种<b>融合大语言模型（LLM）与启发式贪心算法</b>的智能排课方法：利用 LLM 对自然语言需求进行结构化解析与可行性预检，通过课程语义聚类将大规模问题分解为低复杂度子问题，结合"最受约束优先"贪心策略与变邻域迭代调课生成可行方案，并引入 LLM 对失败课程进行约束冲突归因与建议生成，构建<b>"排课—分析—反馈"闭环优化机制</b>。本方法在自然语言理解、组合优化与可解释决策三者间实现协同，于大规模真实排课场景中兼具<b>高自动化程度</b>与<b>强可解释性</b>。本报告依次阐述选题依据、研究动态、研究内容，并从<b>理论、框架完成度、已完成实验</b>三个维度汇报阶段性进展。</p>
+</section>
+
+<!-- ============ 1 ============ -->
+<h2 id="s1"><span class="num">一</span>选题的科学依据</h2>
+<p>课程排课本质是在多重硬、软约束下对有限资源进行组合分配的优化问题，已被证明为 <strong>NP-hard 问题</strong><sup>[1,2]</sup>——随课程、班级、教室规模增大，精确求解时间呈指数级增长。以西安交通大学 4000 余教学班为例，相应整数规划模型将产生数万量级的变量与约束，难以在可接受时间内求得可行解。</p>
+<h3>现实痛点</h3>
+<div class="twocol">
+  <div class="c"><h4>① 规模与可行性难以兼顾</h4>
+    传统方法（整数规划及遗传、退火、禁忌等元启发式）在中小规模可得可行解，但面对大规模、高约束密度的真实场景，求解效率与可行性难以两全，且元启发式所得解缺乏可解释性。</div>
+  <div class="c"><h4>② 自然语言需求难以解析</h4>
+    排课需求大量以自然语言表述（教师偏好、教室要求、时间限制），传统系统依赖人工录入与规则维护，结构化成本高，严重制约系统的可用性与跨场景迁移能力。</div>
+</div>
+<h3>理论意义与应用价值</h3>
+<p>理论层面，排课问题是计算复杂性理论、约束规划与多目标优化的经典检验平台；应用层面，其研究成果可将教务人员从繁重易错的手工排课中解放，把排课周期由数周压缩至小时级，并优化师资与教室资源配置，其底层逻辑亦可迁移至医护排班、考场编排、生产调度等同类问题。近年大语言模型在语义理解与推理能力上的显著提升，为破解"自然语言需求解析"这一长期瓶颈提供了新的技术路径，构成本课题的切入点。</p>
+
+<!-- ============ 2 ============ -->
+<h2 id="s2"><span class="num">二</span>国内外研究动态</h2>
+<h3>2.1 课程排课问题的理论与算法</h3>
+<p>二十余年来，求解大学课程时间表问题的方法可归纳为四类<sup>[3,4]</sup>：</p>
+<p>
+  <span class="pill">运筹学方法（图着色 / 整数规划 / 约束满足）</span>
+  <span class="pill">元启发式（遗传 / 禁忌 / 退火 / 蚁群 / 粒子群 / 变邻域）</span>
+  <span class="pill">智能方法（混合 / 模糊 / 聚类）</span>
+  <span class="pill">多智能体方法</span>
+</p>
+<p>多数研究采用"构造—改进"两阶段框架。整数规划虽能提供最优性保证，但 Daskalaki 等<sup>[5]</sup>的实践表明其求解时间随规模急剧增长（92 门课程需 95 分钟），难以应对万级规模实例；Gaspero 与 Schaerf<sup>[6]</sup>提出的多邻域局部搜索，对本研究的调课邻域设计具有直接的参考价值。</p>
+<h3>2.2 LLM 与调度优化的融合趋势</h3>
+<p>研究者已开始探索大语言模型在调度问题中的三类角色：</p>
+<ul>
+  <li><strong>约束解析与建模</strong>：NL4Opt<sup>[7]</sup>、Holy Grail 2.0<sup>[8]</sup>、OptiMUS<sup>[9]</sup> 等实现自然语言到可求解数学模型的端到端转化；</li>
+  <li><strong>启发式设计</strong>：FunSearch<sup>[10]</sup>、EoH<sup>[11]</sup> 将 LLM 与进化搜索结合，自动发现超越人工设计的启发式规则；</li>
+  <li><strong>可解释决策</strong>：TRACE-cs<sup>[12]</sup>将符号推理与 LLM 结合，为排课查询生成可验证的自然语言解释。</li>
+</ul>
+<div class="box accent">
+  <p style="margin:0"><strong>研究空白与切入点：</strong>大语言模型已在语义解析、启发式设计与结果解释三方面各有进展，但<strong>将三者统一整合为完整排课流程的研究尚属空白</strong>。本课题将此三者贯通于一条"解析—优化—反馈"主线，构成核心创新。</p>
+</div>
+
+<!-- ============ 3 ============ -->
+<h2 id="s3"><span class="num">三</span>研究目标与研究内容</h2>
+<p>总体目标是构建一种融合 LLM 语义理解能力与启发式贪心求解能力的智能排课方法，实现自然语言理解、组合优化与可解释决策的协同闭环。研究内容落实为如下五阶段流程，各模块迭代协作：</p>
+<div class="flow">
+  <div class="step llm"><div class="s-no">1</div><div class="s-t">自然语言解析</div>
+    <div class="s-d">LLM 将教师偏好、教室与时间要求等自由文本抽取为统一结构化约束</div></div>
+  <div class="step"><div class="s-no">2</div><div class="s-t">语义聚类分批</div>
+    <div class="s-d">课程属性向量化聚类，将大问题分解为约束相近的低复杂度子批</div></div>
+  <div class="step"><div class="s-no">3</div><div class="s-t">贪心排课与求解策略</div>
+    <div class="s-d">"最受约束优先"逐批排课，并以负载均衡放置策略确定具体时空</div></div>
+  <div class="step"><div class="s-no">4</div><div class="s-t">变邻域调课</div>
+    <div class="s-d">对失败课程逐步松弛软约束、局部重调度，多轮提升完成率</div></div>
+  <div class="step llm"><div class="s-no">5</div><div class="s-t">LLM 失败归因</div>
+    <div class="s-d">结合排课日志生成原因解释与调整建议，闭合反馈回路</div></div>
+</div>
+<p style="text-align:center;color:var(--muted);font-size:13.5px">
+  ▲ 绿色为 LLM 增强环节，蓝色为优化求解环节，五阶段贯通为"排课—分析—反馈"闭环</p>
+<p>相较现有工作，本方法的创新性体现在：<strong>(1)</strong> 以 LLM 统一处理需求解析与失败归因两端，贯通"语义—优化—解释"全链路；<strong>(2)</strong> 以语义聚类实现大规模问题的可控分解；<strong>(3)</strong> 在贪心放置环节引入近似最小约束值的求解策略，缓解资源分布偏倚。</p>
+
+<!-- ============ 4 ============ -->
+<h2 id="s4"><span class="num">四</span>研究进展情况</h2>
+<p>本章从<strong>理论进展、框架完成度、已完成实验</strong>三个维度汇报阶段性成果。</p>
+
+<h3 id="s41">4.1 理论进展：问题形式化与算法设计</h3>
+<p><strong>问题形式化。</strong>设教学班集合 $C$，教学日集合 $D$，每日时段集合 $P$，教学周集合 $W$，教室集合 $R$，教师集合 $T$，班级集合 $B$。每个教学班 $c$ 关联教师集合 $T_c$、班级集合 $B_c$、周学时 $z_c$、容量需求 $q_c$、偏好时间 $\Phi_c$ 与避免时间 $\Psi_c$，且教师 $t$ 仅在其指定子周集合 $W_t$ 授课。排课即求映射</p>
+<div class="formula">$$\sigma:\ c\ \longmapsto\ \big(r_c,\ T_c,\ B_c,\ \{(d,s,h)\},\ \{W_t\}_{t\in T_c}\big),$$</div>
+<p>其中三元组 $(d,s,h)$ 表示一段连续上课（星期 $d$、起始节 $s$、连续节数 $h$），满足 $s+h-1\le|P|$。<strong>硬约束</strong> $\mathcal{H}$ 要求任意 $(w,d,p)\in W\times D\times P$ 处教室、教师、班级三类资源均唯一占用；<strong>软约束</strong> $\mathcal{S}$ 涵盖时段偏好、教学楼/校区偏好、教室类型匹配与历史教室倾向。整体优化目标以最大化排课完成率为首要、软约束累计满足度为次要，按字典序定义：</p>
+<div class="formula">$$\max\ \Big(\ \big|\{c\in C:\ c\ \text{已成功排课}\}\big|,\quad \sum_{c}\sum_{k}\lambda_k\, s_k(c)\ \Big),$$</div>
+<p class="fcap">其中 $s_k(c)$ 为第 $k$ 项软约束的满足度评分，$\lambda_k$ 为权重系数。</p>
+
+<p><strong>核心环节一：最受约束优先（MCF）贪心。</strong>对待排教学班 $c$，定义其在教室 $r$ 下的可行方案数与总资源量：</p>
+<div class="formula">$$N(c,r)=\sum_{\pi\in\Pi(c)}\big|\Theta(c,r,\pi)\big|,\qquad \Omega(c)=\sum_{r\in R(c)}N(c,r),$$</div>
+<p class="fcap">$\Pi(c)$ 为满足周学时 $z_c$ 且避开禁用时段 $\Psi_c$ 的上课天模式集合；$\Theta(\cdot)$ 返回同时通过教室、教师、班级、时间偏好四类冲突检查的可行时段；$R(c)$ 为通过容量、校区、教室类型与教学楼筛选的合适教室集合。</p>
+<p>每轮选取资源最紧张的教学班优先安排，以避免后期资源耗尽：</p>
+<div class="formula">$$c^\ast=\arg\min_{c}\ \Omega(c)\quad(\text{Most Constrained First}).$$</div>
+
+<p><strong>核心环节二：求解策略（值排序）。</strong>确定 $c^\ast$ 后，须在其可行候选集 $A(c^\ast)=\{(r,a)\}$ 中选定具体教室与时段。原始策略取"可行方案数最多教室的首个可行时段"，属朴素 first-fit，会使课程系统性聚集于周初早间、并令大容量教室被小班课程占用。本研究将其视为约束满足中的<strong>值排序</strong>问题，引入近似<strong>最小约束值（Least-Constraining Value, LCV）</strong>的负载均衡放置策略：</p>
+<div class="formula">$$(r^\ast,a^\ast)=\arg\min_{(r,a)\in A(c^\ast)}\Big[\,w_\rho\,\rho(a)+w_\omega\,\omega(r,c^\ast)+w_\varepsilon\,\varepsilon(a)\,\Big],$$</div>
+<p class="fcap">$\rho(a)$ 为方案 $a$ 所占时段在全体可排教室、教学周上的平均占用率（为后续课程保留紧俏时段）；$\omega(r,c)=(\mathrm{cap}_r-q_c)/\mathrm{cap}_r$ 为教室容量浪费率（容量最优匹配，best-fit）；$\varepsilon(a)$ 为晚间节次占比（作息友好先验）。三项均为软导向，不破坏可行性。该策略的实验对比见 §4.3。</p>
+
+<p><strong>核心环节三：变邻域调课与 LLM 归因。</strong>对首轮失败集合按轮次迭代收缩 $F_0\supseteq F_1\supseteq\cdots\supseteq F_K$，逐步放松软约束并对已排课程进行局部重调度；对最终残余失败集合 $F_K$，结合排课日志 $\mathcal{L}$（冲突资源类型、冲突教学班、剩余可用时段）由 LLM 生成解释与建议：</p>
+<div class="formula">$$\mathrm{LLM}\big(F_K,\ \mathcal{L}\big)\ \longrightarrow\ \big(\text{原因解释},\ \text{调整建议}\big),$$</div>
+<p>由此闭合"归因—调整—重排"回路。</p>
+
+<h3 id="s42">4.2 框架完成度：系统模块实现情况</h3>
+<p>系统已实现完整流水线，六个核心模块的实现情况如下表所示。其中自然语言需求解析的 LLM 版本已完成，端到端流程与可视化模块为本阶段在中期框架上的补充与强化。</p>
+<table>
+  <thead><tr><th style="width:20%">模块</th><th style="width:15%">状态</th><th>实现情况</th></tr></thead>
+  <tbody>
+    <tr><td class="lab">① 自然语言<br>需求解析</td><td><span class="tag-done">已完成<br>（规则 + LLM）</span></td>
+      <td>规则版可将"周三下午""避免周二 5–8 节"等自由格式偏好转为结构化时间窗；<strong>LLM 版已完成</strong>，对更复杂、隐含的自然语言需求实现语义级解析与结构化抽取。</td></tr>
+    <tr><td class="lab">② 语义嵌入<br>聚类分批</td><td><span class="tag-done">已完成</span></td>
+      <td>采用国产开源嵌入模型对课程向量化，将数千门课程聚为约束相近的子批，已与贪心引擎完整耦合，显著降低单次搜索复杂度。</td></tr>
+    <tr><td class="lab">③ 贪心排课<br>与求解策略</td><td><span class="tag-done">已完成</span></td>
+      <td>系统调度核心，将硬约束与软约束统一纳入决策，以"最受约束优先"分批迭代排课；求解策略（§4.1）已实现并可配置切换。</td></tr>
+    <tr><td class="lab">④ 变邻域<br>迭代调课</td><td><span class="tag-done">已完成</span></td>
+      <td>对首轮失败课程逐步放松软约束、局部重调度，以二至三轮迭代持续提升整体完成率。</td></tr>
+    <tr><td class="lab">⑤ LLM 失败<br>归因与反馈</td><td><span class="tag-prog">规则版完成<br>LLM 版完善中</span></td>
+      <td>规则版已能结构化分析排课日志中的拒绝类型与资源占用并输出归因；LLM 版正在完善，以生成自然语言原因解释与可操作调整建议。</td></tr>
+    <tr><td class="lab">⑥ 端到端流程<br>与可视化</td><td><span class="tag-done">已完成</span></td>
+      <td>串联各模块构成完整调度流程，支持聚类批次管理、中间状态持久化与断点续算，配套教室/教师/班级利用率等多维可视化与自动分析报告。</td></tr>
+  </tbody>
+</table>
+
+<h3 id="s43">4.3 已完成的实验：真实数据集验证与策略对比</h3>
+<div class="stat-row">
+  <div class="stat"><div class="n">99.1%</div><div class="l">XJTU 4000+ 班<br>调课后完成率</div></div>
+  <div class="stat"><div class="n">98.1%</div><div class="l">另一高校 5000 班<br>调课后完成率</div></div>
+  <div class="stat"><div class="n">2</div><div class="l">真实高校数据集<br>端到端验证</div></div>
+  <div class="stat"><div class="n">≤3h</div><div class="l">万级规模排课<br>调课 12–30 min</div></div>
+</div>
+<p><strong>整体性能。</strong>系统已在两套真实高校数据上完成端到端实验。西安交通大学 4000 余教学班经贪心与变邻域调课后完成率达 <strong>99.1%</strong>，剩余 36 个失败案例均获结构化归因；另一所高校近 5000 教学班首轮完成率 87.7%、调课后提升至 <strong>98.1%</strong>，最终 87 个失败教学班被归为"主讲教师信息缺失、无满足条件教室资源、教师时间窗已占满"三类。两套数据均验证了系统的稳定性、跨院校适用性与时间高效性。</p>
+
+<p><strong>求解策略对比实验。</strong>为验证 §4.1 所提放置策略的有效性，在某高校真实数据上对三种策略各执行一次首轮排课（同一随机种子，未含调课）：first 为原始 first-fit 基线，random 为消除偏倚的 GRASP 式随机化基线，balanced 为本研究所提的负载均衡放置策略。</p>
+<table>
+  <thead><tr><th>评价指标</th><th class="center">first（原始）</th><th class="center">random（去偏基线）</th><th class="center">balanced（本研究）</th></tr></thead>
+  <tbody>
+    <tr><td class="lab">首轮排课完成率</td><td class="center">87.58%</td><td class="center">88.42%</td><td class="center best">88.44%</td></tr>
+    <tr><td class="lab">晚间（9–11 节）课时占比</td><td class="center">8.7%</td><td class="center bad">21.8%</td><td class="center best">3.7%</td></tr>
+    <tr><td class="lab">平均教室容量利用率</td><td class="center">61.1%</td><td class="center">60.7%</td><td class="center best">84.7%</td></tr>
+    <tr><td class="lab">周一 / 周五 课时占比</td><td class="center bad">33.3% / 8.3%</td><td class="center">23.4% / 20.7%</td><td class="center">22.5% / 21.8%</td></tr>
+  </tbody>
+</table>
+<div class="box gold">
+  <p style="margin:0"><strong>实验结论：</strong>原始策略下周一课时为周五的约 4 倍，时段分布偏倚显著。随机化与负载均衡策略均消除了该偏倚，且完成率较原始策略提升约 0.9 个百分点；然而随机化以晚间课时占比由 8.7% 升至 21.8% 为代价（"均匀分布并非最优分布"）。<strong>本研究所提负载均衡策略在取得同等完成率与时段均衡的同时，将晚间课时占比降至 3.7%、教室容量利用率由 61% 提升至 85%</strong>，在可行性、资源适配与作息友好三方面均优，验证了求解策略设计的有效性。</p>
+</div>
+
+<p><strong>可视化结果。</strong>下图基于该高校真实数据的实际排课产物绘制，直观印证上述结论。图 1 对比三种放置策略的关键指标；图 2 为 balanced 策略调课后课时在"周次×节次"上的分布热力图，可见周一至周五分布均衡（无周初早间堆积）、晚间 9–11 节占用极低（≤0.6%）、周末基本空闲，符合高校作息；图 3 为本次基于 balanced 首轮结果运行变邻域调课的完成率提升。</p>
+<figure>
+  <img src="figures/strategy_compare_report.png" alt="三策略关键指标对比">
+  <figcaption>图 1　first / random / balanced 三策略关键指标对比（某高校真实数据，首轮排课）</figcaption>
+</figure>
+<figure>
+  <img src="figures/heatmap_report_weekday_period.png" alt="周次×节次课时分布热力图">
+  <figcaption>图 2　balanced 策略调课后课时在 周次×节次 上的分布热力图（数值为占全部课时比例 %）</figcaption>
+</figure>
+<figure style="max-width:560px;margin-left:auto;margin-right:auto">
+  <img src="figures/reschedule_gain_report.png" alt="调课前后完成率提升">
+  <figcaption>图 3　基于 balanced 首轮结果的变邻域调课完成率提升（4670 教学班，88.44% → 98.09%）</figcaption>
+</figure>
+
+<!-- ============ 5 ============ -->
+<h2 id="s5"><span class="num">五</span>下一步的工作计划</h2>
+<div class="timeline">
+  <div class="item now"><span class="t">框架完善</span><span class="when">进行中</span>
+    <p style="margin:4px 0 0">将 LLM 合理性检查与失败归因模块由规则版升级为语义推理版，提升对多样表述、隐性矛盾与多重耦合冲突的覆盖能力与解释可读性。</p></div>
+  <div class="item"><span class="t">自然语言解析方法对比</span><span class="when">下一阶段</span>
+    <p style="margin:4px 0 0">构建排课需求训练数据（真实需求与合成增强），对比提示工程与 LoRA 微调在解析准确率上的差异。</p></div>
+  <div class="item"><span class="t">模块级消融实验</span><span class="when">核心验证</span>
+    <p style="margin:4px 0 0">设置五组消融变体（w/o LLM-Parse、Consistency、Embedding、MCF、LLM-Diag），在小型 ITC-2007、中型 ITC-2019 与大型真实数据上，从可行性、质量、效率、可解释性四维度量化各组件贡献；放置策略对比纳入 MCF 相关分析。</p></div>
+  <div class="item"><span class="t">基准接入与可解释性评估</span>
+    <p style="margin:4px 0 0">接入 ITC 标准基准数据集以论证方法普适性；参照 TRACE-cs 的人工评估范式，从正确性、可操作性、简洁性三维评价失败原因解释的质量。</p></div>
+  <div class="item done"><span class="t">论文撰写与定稿</span>
+    <p style="margin:4px 0 0">汇总实验结论，明确方法创新点与作用边界，完成学位论文撰写、修改与答辩。</p></div>
+</div>
+
+<!-- ============ 参考文献 ============ -->
+<h2 id="ref"><span class="num">六</span>参考文献</h2>
+<ol class="refs">
+  <li id="r1">Even S., Itai A., Shamir A. On the complexity of timetable and multicommodity flow problems[J]. SIAM Journal on Computing, 1976, 5(4): 691–703.</li>
+  <li id="r2">Cooper T. B., Kingston J. H. The complexity of timetable construction problems[C]//PATAT 1995. LNCS 1153. Berlin: Springer, 1996: 281–295.</li>
+  <li id="r3">Schaerf A. A survey of automated timetabling[J]. Artificial Intelligence Review, 1999, 13(2): 87–127.</li>
+  <li id="r4">Pillay N. A survey of school timetabling research[J]. Annals of Operations Research, 2014, 218(1): 261–293.</li>
+  <li id="r5">Daskalaki S., Birbas T., Housos E. An integer programming formulation for a case study in university timetabling[J]. European Journal of Operational Research, 2004, 153(1): 117–135.</li>
+  <li id="r6">Di Gaspero L., Schaerf A. Multi-neighbourhood local search with application to course timetabling[C]//PATAT 2002. LNCS 2740. Berlin: Springer, 2003: 262–275.</li>
+  <li id="r7">Ramamonjison R., Yu T., Li R., et al. NL4Opt competition: Formulating optimization problems based on their natural language descriptions[C]//Proceedings of the NeurIPS 2022 Competition Track. PMLR, 2023, 220: 189–203.</li>
+  <li id="r8">Tsouros D., Verhaeghe H., Kadioglu S., Guns T. Holy Grail 2.0: From natural language to constraint models[J]. arXiv preprint arXiv:2308.01589, 2023.</li>
+  <li id="r9">AhmadiTeshnizi A., Gao W., Udell M. OptiMUS: Scalable optimization modeling with (MI)LP solvers and large language models[C]//Proceedings of the 41st International Conference on Machine Learning (ICML). PMLR, 2024.</li>
+  <li id="r10">Romera-Paredes B., Barekatain M., Novikov A., et al. Mathematical discoveries from program search with large language models[J]. Nature, 2024, 625: 468–475.</li>
+  <li id="r11">Liu F., Tong X., Yuan M., et al. Evolution of heuristics: Towards efficient automatic algorithm design using large language model[C]//Proceedings of the 41st International Conference on Machine Learning (ICML). PMLR, 2024.</li>
+  <li id="r12">Vasileiou S. L., Yeoh W. TRACE-CS: A hybrid logic–LLM system for explainable course scheduling[J]. arXiv preprint arXiv:2409.03671, 2024.</li>
+  <li id="r13">Yang C., Wang X., Lu Y., et al. Large language models as optimizers[C]//Proceedings of the 12th International Conference on Learning Representations (ICLR), 2024.</li>
+</ol>
+
+<div class="footnote">
+  <p>注：整体完成率数据引自两套真实高校数据集的端到端实验；求解策略对比数据来自某高校真实数据的首轮排课实验。文中公式由本地 MathJax（SVG 输出）离线渲染，无需联网。</p>
+</div>
+
+</div>
+</body>
+</html>

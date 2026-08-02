@@ -1,3 +1,14 @@
+"""
+调课算法主模块（直接运行：python reschedule_by_adjusting.py）。
+
+对首轮排课失败的教学班，通过腾挪已排课程寻找可行的时段和教室：
+  - re_with_match_courses_new / re_with_match_courses_betchs_new：单班/批量调课匹配
+  - reschedule：调课主流程入口
+  - 模块顶部定义了基础数据和排课结果的默认文件路径
+
+输入：排课结果/排课失败课程_全部.xlsx、saved_timetables.pkl
+输出：排课结果/全部调整结果.xlsx、调课后的整体结果.xlsx、reschedule_timetables.pkl 等
+"""
 from Basic_Data import *
 from utils1 import *
 import pickle  # 添加pickle模块用于序列化和反序列化
@@ -13,15 +24,20 @@ from utils_for_reschedule import *
 #teacher_excel = os.path.join(root_path, '教师信息汇总.xlsx')
 #banji_excel = os.path.join(root_path, '班级汇总.xlsx')
 
-root_path = '智能排课基础数据'
-course_excel = os.path.join(root_path, '课程表2025-2026-1.xlsx')
-#course_excel=os.path.join(root_path,'测试课程表.xlsx')
-classroom_excel = os.path.join(root_path, '更新后的教室表.xlsx')
-teacher_excel = os.path.join(root_path, '更新后的教师名单2025-2026-1.xlsx')
-banji_excel = os.path.join(root_path, '班级汇总2025-2026-1.xlsx')
+# root_path = '智能排课基础数据'
+# course_excel = os.path.join(root_path, '课程表2025-2026-1.xlsx')
+# classroom_excel = os.path.join(root_path, '更新后的教室表.xlsx')
+# teacher_excel = os.path.join(root_path, '更新后的教师名单2025-2026-1.xlsx')
+# banji_excel = os.path.join(root_path, '班级汇总2025-2026-1.xlsx')
+
+BASE_DIR = os.path.join(os.path.dirname(__file__), '智能排课基础数据', '提取的基础数据表_converted')
+course_excel = os.path.join(BASE_DIR, '课程表_split.xlsx')   # Issue #14 拆奇数 ZXS 后的副本
+classroom_excel =  os.path.join(BASE_DIR, '教室表.xlsx')
+teacher_excel = os.path.join(BASE_DIR, '教师表.xlsx')
+banji_excel = os.path.join(BASE_DIR, '班级表.xlsx')
 
 # 排课参数
-num_weeks = 17
+num_weeks = 20
 num_periods = 11
 num_days = 7
 
@@ -480,8 +496,8 @@ def re_with_match_courses_betchs_new(
         # 候选允许的教室池（宽松）
         suitable_classrooms = filter_suitable_classrooms(classrooms, candidate_jxbs[0], relax_constraints=True)
         
-        # 根据 class_ralex 决定是否检查班级冲突
-        if class_ralex:
+        # 根据 class_ralex 或课程 IF_CLASS_CONFICT 开关决定是否检查班级冲突（Issue #13）
+        if class_ralex or not check_class_conflict(info['jxbs'][0]):
             re_list_of_classes = []  # 不检查班级冲突
         else:
             re_list_of_classes = info['classes_list']  # 检查班级冲突
@@ -525,8 +541,8 @@ def re_with_match_courses_betchs_new(
             # 候选允许的教室池（宽松）
             suitable_classrooms = filter_suitable_classrooms(classrooms, candidate_jxbs[0], relax_constraints=True)
             
-            # 根据 class_ralex 决定是否检查班级冲突
-            if class_ralex:
+            # 根据 class_ralex 或课程 IF_CLASS_CONFICT 开关决定是否检查班级冲突（Issue #13）
+            if class_ralex or not check_class_conflict(info['jxbs'][0]):
                 re_list_of_classes = []  # 不检查班级冲突
             else:
                 re_list_of_classes = info['classes_list']  # 检查班级冲突
@@ -693,6 +709,7 @@ def reschedule(timetables_data):
         
         # 获取课程的周学时
         zxs = jxbs[0].ZXS if hasattr(jxbs[0], 'ZXS') else 0
+        # zxs = math.ceil(zxs)
         print(f"课程周学时: {zxs}")
         
         # 获取课程的教学周次
@@ -891,6 +908,31 @@ def reschedule(timetables_data):
             save_scheduling_results(rescheduled_results, courses, rescheduled_file)
             print(f"成功为 {len(rescheduled_results)} 门失败课程重新排课，结果已保存至 {rescheduled_file}")
     
+    # ========== 修复末段子阶段：最小偏离软偏好修复（Issue：偏好超订的体育类等）==========
+    # 对穷尽常规松弛后仍失败、且属于"资源超订"(偏好格被同教师同偏好班占死)的 ZXS<=2 课，
+    # 在守住全部硬约束(教师/班级/教室/禁排/校级)的前提下，按"最小偏离"挪到最近可行格。
+    # 不丢偏好：偏好仍是主约束，仅对物理无解者做最小让步。异常隔离，绝不影响上面已得结果。
+    try:
+        from scripts.soft_preference_repair import soft_preference_repair, _expand_rows
+        sf_ids = [str(d.get('jxbid') or d.get('教学班ID')) for d in still_failed] if still_failed else []
+        if sf_ids:
+            print("\n[软偏好修复] 对仍失败课程做最小偏离软偏好落子 ...")
+            rescued, sf_rest = soft_preference_repair(
+                courses, teachers, classes, classrooms, sf_ids, verbose=True)
+            if rescued:
+                _by_id = {}
+                for _c in courses:
+                    _by_id.setdefault(_c.JXBID, []).append(_c)
+                det = _expand_rows(rescued, _by_id)
+                det.to_excel(os.path.join(results_dir, "软偏好修复明细.xlsx"), index=False)
+                # 更新 still_failed：剔除已救回
+                _rescued_ids = {r['jxbid'] for r in rescued}
+                still_failed = [d for d in still_failed
+                                if str(d.get('jxbid') or d.get('教学班ID')) not in _rescued_ids]
+                print(f"[软偏好修复] 救回 {len(rescued)} 门，剩余真失败 {len(still_failed)} 门")
+    except Exception as _e:
+        print(f"[软偏好修复] 跳过（不影响主结果）：{_e}")
+
     # 保存仍然失败的课程
     if still_failed:
         failed_output = os.path.join(results_dir, "调课失败的排课失败课程.xlsx")
@@ -898,7 +940,7 @@ def reschedule(timetables_data):
         failed_df.to_excel(failed_output, index=False)
         print(f"仍有 {len(still_failed)} 门课程无法排课，信息已保存至 {failed_output}")
 
-    # 保存调课后更新的时间表
+    # 保存调课后更新的时间表（含软偏好修复落子）
     save_timetables(courses, teachers, classrooms, classes,reschedule_timetables_file)
     
     # 生成调课结果汇总报告

@@ -1,15 +1,39 @@
 
-# Local large files
+# Local large files & data directories
 my_models/
-排课结果/*.pkl
+智能排课基础数据/
+排课结果/
+排课结果 copy/
+排课结果1/
+排课结果2/
+排课要求和基础数据_v1.0.xlsx
+排课结果3/
+排课结果_xjtu/
+
+# IDE & tools
+.venv/
+venv/
+env/
+.claude/
+.vscode/
+.idea/
 
 # Python
 __pycache__/
 *.pyc
-.venv/
-venv/
-env/
+*.pyo
 
 # Logs and caches
 *.log
+log*.txt
+logs/
 .cache/
+
+# Office 临时锁文件
+~$*
+
+# macOS
+.DS_Store
+# Office
+*.pptx
+*.tmp

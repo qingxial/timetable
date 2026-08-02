@@ -1,4 +1,14 @@
 """
+排课/调课结果的持久化与统计模块。
+
+主要内容：
+  - save_timetables / load_timetables / restore_timetables：
+    时间表状态（教师、教室、班级占用矩阵）以 pkl 形式保存与恢复
+    （对应 排课结果/saved_timetables.pkl 和 reschedule_timetables.pkl）
+  - rebuild_timetables_from_scheduled_courses：从排课结果 Excel 重建时间表
+  - select_candidates / clear_placement / place_placement：调课时的候选腾挪操作
+  - compute_class_usage_rates / compute_classroom_usage_rates_new：班级/教室利用率统计
+
 Author: Li Qingxia
 """
 from Basic_Data import *
@@ -15,14 +25,21 @@ from collections import defaultdict
 #teacher_excel = os.path.join(root_path, '教师信息汇总.xlsx')
 #banji_excel = os.path.join(root_path, '班级汇总.xlsx')
 
-root_path = '智能排课基础数据'
-course_excel = os.path.join(root_path, '课程表2025-2026-1.xlsx')
-classroom_excel = os.path.join(root_path, '更新后的教室表.xlsx')
-teacher_excel = os.path.join(root_path, '更新后的教师名单2025-2026-1.xlsx')
-banji_excel = os.path.join(root_path, '班级汇总2025-2026-1.xlsx')
+# root_path = '智能排课基础数据'
+# course_excel = os.path.join(root_path, '课程表2025-2026-1.xlsx')
+# classroom_excel = os.path.join(root_path, '更新后的教室表.xlsx')
+# teacher_excel = os.path.join(root_path, '更新后的教师名单2025-2026-1.xlsx')
+# banji_excel = os.path.join(root_path, '班级汇总2025-2026-1.xlsx')
+
+
+root_path = os.path.join(os.path.dirname(__file__), '智能排课基础数据', '提取的基础数据表_converted')
+course_excel = os.path.join(root_path, '课程表.xlsx')
+classroom_excel =  os.path.join(root_path, '教室表.xlsx')
+teacher_excel = os.path.join(root_path, '教师表.xlsx')
+banji_excel = os.path.join(root_path, '班级表.xlsx')
 
 # 排课参数
-num_weeks = 17
+num_weeks = 20
 num_periods = 11
 num_days = 7
 
@@ -293,7 +310,7 @@ def rebuild_timetables_from_scheduled_courses(scheduled_df, teachers, classrooms
 
                 # 尝试找到一个合适的 替代教室
                 for room in classrooms:
-                    if (campus is None or room.MC == campus) and room.SFYXPK == '1':
+                    if (campus is None or room.MC == campus) and str(room.SFYXPK).strip() in ('1', '1.0'):
                         classroom = room
                         print(
                             f"注意：未找到原教室 {classroom_code}，为课程 {jxbid} ({course_name}) 分配替代教室 {room.JASDM} ({room.JASMC})")
@@ -305,7 +322,9 @@ def rebuild_timetables_from_scheduled_courses(scheduled_df, teachers, classrooms
 
             # 获取教师和班级列表
             list_of_JSHs = [jxb.JSH for jxb in jxbs]
-            list_of_classes = get_class_instances1(jxbs[0], classes, courses)
+            # 冲突开关（Issue #13）：IF_CLASS_CONFICT==0 不占班级表，IF_ROOM_CONFICT==0 不占教室表
+            list_of_classes = get_class_instances1(jxbs[0], classes, courses) if check_class_conflict(jxbs[0]) else []
+            write_room = check_room_conflict(jxbs[0])
             list_of_teacher_week = [
                 trans_week_flags(jxb.RWJSZCDM) if hasattr(jxb, 'RWJSZCDM') and jxb.RWJSZCDM else []
                 for jxb in jxbs
@@ -339,6 +358,9 @@ def rebuild_timetables_from_scheduled_courses(scheduled_df, teachers, classrooms
                 end_period = int(period_range[1]) if len(period_range) > 1 else start_period + 1
                 hours = end_period - start_period
 
+                # 同步 scheduled_days（Issue #14 LCV 避同天软约束查询用）
+                for every_jxb in jxbs:
+                    every_jxb.scheduled_days.add(day)
                 # 更新时间表
                 for week in teaching_weeks:
                     for every_jxb in jxbs:
@@ -346,9 +368,10 @@ def rebuild_timetables_from_scheduled_courses(scheduled_df, teachers, classrooms
                         for p in range(start_period, start_period + hours):
                             every_jxb.timetable[week, day, p] = classroom.JASDM
 
-                    # 更新教室时间表
-                    for p in range(start_period, start_period + hours):
-                        classroom.timetable[week, day, p] = jxbid
+                    # 更新教室时间表（IF_ROOM_CONFICT==0 时跳过写入，实现教室可共占）
+                    if write_room:
+                        for p in range(start_period, start_period + hours):
+                            classroom.timetable[week, day, p] = jxbid
 
                     # 更新教师时间表
                     # 在教师时间表中标记
@@ -397,7 +420,7 @@ def compute_classroom_usage_rates_old(total_weeks, days_of_week, periods_per_day
         campus = getattr(classroom, 'MC', '')
         capacity = getattr(classroom, 'SKZWS', '')
 
-        if IFcoulduse=='0':
+        if str(IFcoulduse).strip() in ('0', '0.0'):
             continue
 
         for w in range(total_weeks):
@@ -595,30 +618,33 @@ def clear_placement(current_classroom, arrangements,teaching_weeks,jxbid,jxbs,te
     - 教室.timetable 里存的是教学班ID（或类似标记），用 classroom_marker 对比清空。
     - 教师/班级 timetable 的 cell 是 {'course': 课程名, 'classroom': 教室名}，用 course_name 对比清空。
     """
+    # 归属判断（修复教师双占/教室悬挂）：只清「确实属于本课 jxbid」的格子，
+    # 避免调课挪课-回滚时把同格已被别的课占用的占位误抹（导致教室占了教师没占的悬挂）。
+    _jid = str(jxbid).strip()
     for day, period, hours in arrangements:
         for week in teaching_weeks:
             for every_jxb in jxbs:
                 for p in range(period, period + hours):
-                    every_jxb.timetable[week, day, p] = ""
-            # 清除教室时间表
+                    every_jxb.timetable[week, day, p] = ""   # 课程自身表：整门移除，无条件清
+            # 清除教室时间表（仅当该格确实写着本课）
             for p in range(period, period + hours):
-                #if current_classroom.timetable[week, day, p] == jxbid:
-                current_classroom.timetable[week, day, p] = ""
+                if str(current_classroom.timetable[week, day, p]).strip() == _jid:
+                    current_classroom.timetable[week, day, p] = ""
 
-            # 在教师时间表中标记
+            # 清除教师时间表（仅当该格确实是本课）
             for teacher_id, (teacher, weeks) in teacher_week_map.items():
                 if week in weeks:
                     for p in range(period, period + hours):
-                        #if teacher.timetable[week, day, p]['course'] == jxbid:
-                        teacher.timetable[week, day, p]['course'] = ""
-                        teacher.timetable[week, day, p]['classroom'] = ""
+                        if str(teacher.timetable[week, day, p]['course']).strip() == _jid:
+                            teacher.timetable[week, day, p]['course'] = ""
+                            teacher.timetable[week, day, p]['classroom'] = ""
 
-            # 清除班级时间表
+            # 清除班级时间表（仅当该格确实是本课）
             for class_obj in classes:
                 for p in range(period, period + hours):
-                    #if class_obj.timetable[week, day, p]['course'] == jxbid:
-                    class_obj.timetable[week, day, p]['course'] = ""
-                    class_obj.timetable[week, day, p]['classroom'] = ""
+                    if str(class_obj.timetable[week, day, p]['course']).strip() == _jid:
+                        class_obj.timetable[week, day, p]['course'] = ""
+                        class_obj.timetable[week, day, p]['classroom'] = ""
 
 ##写入时间表
 def place_placement(current_classroom, arrangements, teaching_weeks, jxbid,jxbs, teacher_week_map, classes):
@@ -626,15 +652,21 @@ def place_placement(current_classroom, arrangements, teaching_weeks, jxbid,jxbs,
     将“候选课程”安排到新位置：同时写入 教室/教师/班级 三张时间表。
     教师/班级 timetable 的单元为 dict，按你的原代码用 candidate_jxbid 记录到 'course' 字段。
     """
+    # IF_ROOM_CONFICT==0 的课不写教室占用 → 教室格子恒为空，天然多班共占（Issue #13 方案 B）
+    write_room = check_room_conflict(jxbs[0]) if jxbs else True
     for day, period, hours in arrangements:
+        # 同步 scheduled_days（Issue #14 LCV 避同天软约束查询用）
+        for every_jxb in jxbs:
+            every_jxb.scheduled_days.add(day)
         for week in teaching_weeks:
             for every_jxb in jxbs:
                #every_jxb.IF_scheduled = True
                 for p in range(period, period + hours):
                     every_jxb.timetable[week, day, p] = current_classroom.JASDM
-            # 教室：直接写入教学班ID
-            for p in range(period, period + hours):
-                current_classroom.timetable[week, day, p] = jxbid
+            # 教室：直接写入教学班ID（IF_ROOM_CONFICT==0 时跳过写入）
+            if write_room:
+                for p in range(period, period + hours):
+                    current_classroom.timetable[week, day, p] = jxbid
 
             # 教师：仅在该教师的有效周内写入
             for _, (teacher, weeks) in teacher_week_map.items():
@@ -998,7 +1030,7 @@ def compute_classroom_usage_rates_new(
 
     for classroom in classrooms:
         IFcoulduse = getattr(classroom, 'SFYXPK', '0')
-        if IFcoulduse == '0':
+        if str(IFcoulduse).strip() in ('0', '0.0'):
             continue  # 不允许排课跳过
 
         code = getattr(classroom, 'JASDM', '')

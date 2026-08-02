@@ -590,7 +590,7 @@ def run_postfailure_analysis(
         num_periods,
     )
 
-    list_of_jas = [c for c in classrooms if c.SFYXPK == "1"]
+    list_of_jas = [c for c in classrooms if str(c.SFYXPK).strip() in ("1", "1.0")]
     unique_jasdms = list(dict.fromkeys([c.JASDM for c in list_of_jas]))
     jasdm_dict = {jasdm: i for i, jasdm in enumerate(unique_jasdms)}
 

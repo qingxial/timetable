@@ -1,10 +1,21 @@
+"""
+排课时间约束解析与时段可用性检查模块。
 
+主要内容：
+  - parse_cell_to_struct / build_preferences：把「指定/避免排课时间」的中文文本
+    解析成结构化的时间约束（周次、星期、节次）
+  - new_generate_day_patterns：根据周学时和时间约束生成可行的“天-节次”组合模式
+  - new_check_period_availability / new_only_time：检查教师、班级、教室在候选时段是否可用
+
+注意：与 utils1.py 互相导入，两个文件需保持在同一目录。
+"""
 import reschedule_by_adjusting
 import os
 from typing import List, Dict, Any, Tuple
 from Basic_Data import *
 from utils1 import *
 import re
+import math 
 
 
 DASH_VARIANTS = "－–—~～至到"   # 常见连接符
@@ -198,7 +209,8 @@ def _try_promote_options_to_preferred_groups(
 
 
 #生成每天上几个小时列表
-def new_generate_day_patterns(zxs, days_of_week, time_constraints=None,flag_reschedule=False):
+def new_generate_day_patterns(zxs, days_of_week, time_constraints=None,flag_reschedule=False,
+                              max_block=2, block_template=None):
     """根据不同ZXS值和时间限制生成特定的上课天数模式
 
     Args:
@@ -214,7 +226,7 @@ def new_generate_day_patterns(zxs, days_of_week, time_constraints=None,flag_resc
     time_constraints = time_constraints or {'preferred_groups': [], 'preferred_options': [], 'unavailable': []}
     preferred_groups = list(time_constraints.get('preferred_groups', []) or [])
     preferred_options = time_constraints.get('preferred_options', []) or []
-
+    zxs = math.ceil(zxs)    #先向上取整
     # 无显式 [] 组、仅有 options 且各槽可固定为「单天+单连续块」、总学时=zxs → 提升为 preferred_groups（与解析出的组结构一致），并清空 options，便于后续 availability 走 groups 分支
     if not preferred_groups and preferred_options:
         promoted = _try_promote_options_to_preferred_groups(preferred_options, zxs)
@@ -262,68 +274,106 @@ def new_generate_day_patterns(zxs, days_of_week, time_constraints=None,flag_resc
 
         return patterns  # 如果有 preferred_groups，直接返回匹配模式
 
-#没有 preferred_groups 时，先按 ZXS 生成，再用 preferred_options 把不合规的模式掐掉（天必须在允许集合里，且每天学时不超过该天最长窗口长度）
-    # 默认模式生成（ZXS规则）
-    if zxs <= 4:
-        for day in range(base_days):
-            patterns.append(([day], [zxs]))
-        if zxs == 3:
-            for start_day in range(base_days - 2):
-                if start_day + 2 < base_days:
-                    patterns.append(([start_day, start_day + 2], [1, 2]))
-                    patterns.append(([start_day, start_day + 2], [2, 1]))
-                if start_day + 3 < base_days:
-                    patterns.append(([start_day, start_day + 3], [1, 2]))
-                    patterns.append(([start_day, start_day + 3], [2, 1]))
-        if zxs == 4:
-            for start_day in range(base_days - 2):
-                if start_day + 2 < base_days:
-                    patterns.append(([start_day, start_day + 2], [2, 2]))
-                if start_day + 3 < base_days:
-                    patterns.append(([start_day, start_day + 3], [2, 2]))
+    # ★ 特殊要求（Q2）：给定连排块模板(如 [4,4]/[3,4]/[8])，天灵活 → 枚举不同天分配，
+    #   绕过"每天≤2节"默认约束。仅当课程有特殊要求时才会传入 block_template。
+    if block_template:
+        import itertools
+        tmpl = list(block_template)
+        if sum(tmpl) == zxs and len(tmpl) <= base_days:
+            perms = set(itertools.permutations(tmpl))
+            for combo in itertools.combinations(range(base_days), len(tmpl)):
+                for perm in perms:
+                    patterns.append((list(combo), list(perm)))
+            if preferred_options:
+                allowed_days, _ = summarize_preferred_options(preferred_options)
+                patterns = [(d, h) for d, h in patterns if all(x in allowed_days for x in d)]
+        return patterns  # 特殊块模板直接返回，不走 ≤2 兜底
 
-    elif zxs == 5:
+# 没有 preferred_groups 时，先按 ZXS 生成，再用 preferred_options 把不合规的模式掐掉
+    # 默认模式生成（ZXS规则）
+    # ★ 设计约束（Issue #14）：每天最多 2 节连排（教学惯例：2 节联排为主）
+    # 奇数 ZXS（3/5/7）尽量先靠 split_odd_zxs.py 拆成偶数虚班；这里仍提供单节兜底
+    if zxs == 1:
+        for day in range(base_days):
+            patterns.append(([day], [1]))
+    elif zxs == 2:
+        for day in range(base_days):
+            patterns.append(([day], [2]))
+    elif zxs == 3:
+        # 跨两天：[2,1] / [1,2]，间隔 2-3 天
         for start_day in range(base_days - 2):
             if start_day + 2 < base_days:
-                patterns.append(([start_day, start_day + 2], [3, 2]))
-                patterns.append(([start_day, start_day + 2], [2, 3]))
+                patterns.append(([start_day, start_day + 2], [1, 2]))
+                patterns.append(([start_day, start_day + 2], [2, 1]))
             if start_day + 3 < base_days:
-                patterns.append(([start_day, start_day + 3], [2, 3]))
-                patterns.append(([start_day, start_day + 3], [3, 2]))
+                patterns.append(([start_day, start_day + 3], [1, 2]))
+                patterns.append(([start_day, start_day + 3], [2, 1]))
+    elif zxs == 4:
+        for start_day in range(base_days - 2):
+            if start_day + 2 < base_days:
+                patterns.append(([start_day, start_day + 2], [2, 2]))
+            if start_day + 3 < base_days:
+                patterns.append(([start_day, start_day + 3], [2, 2]))
+    elif zxs == 5:
+        # 三天拆分 [2,2,1] / [2,1,2] / [1,2,2]
+        for d1 in range(base_days):
+            for d2 in range(d1 + 1, base_days):
+                for d3 in range(d2 + 1, base_days):
+                    patterns.append(([d1, d2, d3], [2, 2, 1]))
+                    patterns.append(([d1, d2, d3], [2, 1, 2]))
+                    patterns.append(([d1, d2, d3], [1, 2, 2]))
     elif zxs == 6:
-        for start_day in range(base_days - 4):
-            if start_day + 4 < base_days:
-                patterns.append(([start_day, start_day + 2, start_day + 4], [2, 2, 2]))
+        # 三天拆分 [2,2,2]：任意 3 天组合（base_days=5 时 C(5,3)=10 个）
+        for d1 in range(base_days):
+            for d2 in range(d1 + 1, base_days):
+                for d3 in range(d2 + 1, base_days):
+                    patterns.append(([d1, d2, d3], [2, 2, 2]))
     elif zxs == 7:
-        for start_day in range(base_days - 3):
-            if start_day + 3 < base_days:
-                patterns.append(([start_day, start_day + 3], [4, 3]))
-                patterns.append(([start_day, start_day + 3], [3, 4]))
+        # 四天拆分 [2,2,2,1] 全部排列；任意 4 天组合，灵活间隔
+        for d1 in range(base_days):
+            for d2 in range(d1 + 1, base_days):
+                for d3 in range(d2 + 1, base_days):
+                    for d4 in range(d3 + 1, base_days):
+                        patterns.append(([d1, d2, d3, d4], [2, 2, 2, 1]))
+                        patterns.append(([d1, d2, d3, d4], [2, 2, 1, 2]))
+                        patterns.append(([d1, d2, d3, d4], [2, 1, 2, 2]))
+                        patterns.append(([d1, d2, d3, d4], [1, 2, 2, 2]))
     elif zxs == 8:
-        for start_day in range(base_days - 3):
-            if start_day + 3 < base_days:
-                patterns.append(([start_day, start_day + 3], [4, 4]))
+        # 四天拆分 [2,2,2,2]：任意 4 天组合（base_days=5 时 C(5,4)=5 个模式；base_days=7 时 35 个）
+        for d1 in range(base_days):
+            for d2 in range(d1 + 1, base_days):
+                for d3 in range(d2 + 1, base_days):
+                    for d4 in range(d3 + 1, base_days):
+                        patterns.append(([d1, d2, d3, d4], [2, 2, 2, 2]))
 
     # 调课模式：添加灵活模式
+    # ★ Issue #14：每天最多 2 节——只在 zxs<=2 时回填 ([d],[zxs])；多日拆分按 split<=2 过滤
     if flag_reschedule:
-        for day in range(base_days):
-            if ([day], [zxs]) not in patterns:
-                patterns.append(([day], [zxs]))
+        if zxs <= 2:
+            for day in range(base_days):
+                if ([day], [zxs]) not in patterns:
+                    patterns.append(([day], [zxs]))
         if zxs >= 4:
             if zxs % 2 == 0:
                 split = zxs // 2
-                for d1 in range(base_days - 1):
-                    for d2 in range(d1 + 1, base_days):
-                        if ([d1, d2], [split, split]) not in patterns:
-                            patterns.append(([d1, d2], [split, split]))
+                if split <= 2:   # 每天 ≤ 2 节
+                    for d1 in range(base_days - 1):
+                        for d2 in range(d1 + 1, base_days):
+                            if ([d1, d2], [split, split]) not in patterns:
+                                patterns.append(([d1, d2], [split, split]))
             for split1 in range(1, zxs):
                 split2 = zxs - split1
+                if split1 > 2 or split2 > 2:   # 每天 ≤ 2 节
+                    continue
                 for d1 in range(base_days - 1):
                     for d2 in range(d1 + 1, base_days):
                         if ([d1, d2], [split1, split2]) not in patterns:
                             patterns.append(([d1, d2], [split1, split2]))
                         if ([d1, d2], [split2, split1]) not in patterns:
                             patterns.append(([d1, d2], [split2, split1]))
+
+    # ★ Issue #14 兜底过滤：所有模式严格每天 ≤ 2 节
+    patterns = [(days, hours) for (days, hours) in patterns if all(h <= max_block for h in hours)]
 
 # 没有 preferred_groups 时，先按 ZXS 生成，再用 preferred_options 把不合规的模式掐掉（天必须在允许集合里，且每天学时不超过该天最长窗口长度）
 # ===== 在这里加入 preferred_options 过滤（上限约束）=====
@@ -335,6 +385,10 @@ def new_generate_day_patterns(zxs, days_of_week, time_constraints=None,flag_resc
             if all(d in allowed_days for d in days)
                and all(h <= day2maxlen.get(d, 0) for d, h in zip(days, hours))
         ] #pattern 的所有天都必须在允许天集合里。且pattern 的每天学时 h 都必须 ≤ 该天允许的最大连续长度。
+
+    # ===== 全局兜底：默认禁止任一天连排 ≥4；有特殊要求(max_block>2)时放宽到 max_block =====
+    _cap = max(3, max_block)
+    patterns = [(days, hours) for (days, hours) in patterns if max(hours) <= _cap]
 
     return patterns
 

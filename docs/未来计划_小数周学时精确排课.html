@@ -1,0 +1,113 @@
+<!DOCTYPE html><html lang="zh"><head><meta charset="UTF-8">
+<title>未来计划 · 小数周学时精确排课（零残差）</title><style>
+body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;max-width:1000px;margin:24px auto;padding:0 20px;color:#2b2b2b;line-height:1.7;}
+h1{text-align:center;color:#1E88E5;border-bottom:3px solid #1E88E5;padding-bottom:10px;}
+h2{color:#0D47A1;border-left:5px solid #1E88E5;padding-left:12px;margin-top:36px;}
+h3{color:#1565C0;}
+table{border-collapse:collapse;width:100%;margin:14px 0;}
+th,td{border:1px solid #ddd;padding:8px 12px;text-align:center;}
+th{background:#1E88E5;color:#fff;} tr:nth-child(even) td{background:#fafafa;}
+.formula{background:#f6f8fa;border-radius:8px;padding:16px 20px;margin:16px 0;font-family:Menlo,Consolas,monospace;font-size:15px;border-left:4px solid #43A047;}
+.good{background:#E8F5E9;border-left:4px solid #43A047;padding:13px 17px;border-radius:5px;margin:16px 0;}
+.warn{background:#FFF8E1;border-left:4px solid #FB8C00;padding:13px 17px;border-radius:5px;margin:16px 0;}
+.bad{background:#FFEBEE;border-left:4px solid #E53935;padding:13px 17px;border-radius:5px;margin:16px 0;}
+.kpi{display:flex;gap:14px;flex-wrap:wrap;margin:18px 0;}
+.box{flex:1 1 180px;background:#f6f8fa;border-radius:10px;padding:16px;text-align:center;border-top:4px solid #1E88E5;}
+.box .v{font-size:26px;font-weight:800;color:#0D47A1;} .box .l{color:#666;font-size:13px;margin-top:4px;}
+.box.g{border-top-color:#43A047;} .box.g .v{color:#2E7D32;}
+.box.r{border-top-color:#E53935;} .box.r .v{color:#C62828;}
+code{background:#f0f0f0;padding:2px 6px;border-radius:4px;font-size:13px;}
+.foot{text-align:center;color:#999;font-size:12px;margin-top:44px;border-top:1px solid #eee;padding-top:14px;}
+</style></head><body>
+
+<h1>小数周学时精确排课方案（零残差）</h1>
+<p style="text-align:center;color:#666;">未来计划 · 评审稿 · 基于 课程表_split_merged.xlsx 实测 532 门小数 ZXS 课程</p>
+
+<h2>1 · 问题：现状是 ceil 向上取整，系统性超排</h2>
+<p>当前 <code>tryloadlimit.py: zxs = math.ceil(zxs)</code> 把小数周学时一律进位（3.5→4、5.5→6），且每个教学周排相同节数。实测后果：</p>
+<div class="kpi">
+<div class="box"><div class="v">532</div><div class="l">小数 ZXS 课程（需排课）</div></div>
+<div class="box"><div class="v">16,947</div><div class="l">名义总学时（学时XS 合计）</div></div>
+<div class="box r"><div class="v">+2,473 节</div><div class="l">ceil 方案超排（+14.6%）</div></div>
+<div class="box g"><div class="v">0</div><div class="l">本方案残差（恒等式保证）</div></div>
+</div>
+
+<h3>1.1 之前"±0.5 残差"的根源：锚点选错了</h3>
+<div class="bad"><strong>错误锚点：</strong>以 <code>ZXS × 周数</code> 为守恒目标。当周数为奇数时该乘积本身是半节（如 3.5×17=59.5），
+物理上不存在半节课，任何整数拆分都必然差 ±0.5——这不是拆分算法的问题，是<b>目标本身不可达</b>。</div>
+<div class="good"><strong>正确锚点：</strong>以<b>整数的总学时 T</b>（学时XS / 理论学时LLXS）为守恒目标。
+实测 532 门课的学时XS <b>100% 是整数</b>（ZXS 才是"T÷周数"算出来的派生小数）。整数目标 + 整数拆分 → 残差恒为 0。</div>
+
+<h2>2 · 算法：T 锚点带余除法分解（恒等式，非近似）</h2>
+<div class="formula">
+输入：总学时 T（整数），上课周数 N<br>
+计算：L = ⌊T / N⌋ ，  r = T − L×N  （即 T mod N）<br><br>
+分解：<b>前 r 周每周 (L+1) 节 ＋ 后 (N−r) 周每周 L 节</b><br><br>
+守恒证明：(L+1)·r + L·(N−r) = L·N + r = T　∎（带余除法恒等式，对任意整数 T、N≥1 成立）
+</div>
+<p>这正是你说的"前面几周多、后面几周少"：多的和少的只差 1 节，且总数<b>严格等于</b>总理论学时。</p>
+
+<h3>2.1 实测样例（真实数据验证 532/532 全部精确）</h3>
+<table>
+<tr><th>课程</th><th>ZXS</th><th>总学时 T</th><th>周数 N</th><th>分解</th><th>合计</th><th>残差</th></tr>
+<tr><td>电气安全工程</td><td>3.5</td><td>14</td><td>4</td><td>前2周×4节 + 后2周×3节</td><td>14</td><td>0</td></tr>
+<tr><td>安全人机工程</td><td>3.5</td><td>20</td><td>6</td><td>前2周×4节 + 后4周×3节</td><td>20</td><td>0</td></tr>
+<tr><td>职业安全与健康</td><td>3.5</td><td>28</td><td>8</td><td>前4周×4节 + 后4周×3节</td><td>28</td><td>0</td></tr>
+<tr><td>火灾探测与控制工程</td><td>5.5</td><td>34</td><td>6</td><td>前4周×6节 + 后2周×5节</td><td>34</td><td>0</td></tr>
+<tr><td>电气安全工程(另一班)</td><td>2.5</td><td>14</td><td>6</td><td>前2周×3节 + 后4周×2节</td><td>14</td><td>0</td></tr>
+<tr><td>某1.5学时课</td><td>1.5</td><td>27</td><td>18</td><td>前9周×2节 + 后9周×1节</td><td>27</td><td>0</td></tr>
+</table>
+<div class="good">奇数周数不再产生残差——因为目标是整数 T，不是半节的 Z×N。
+另外 95 门浮点噪声课（ZXS=0.99999994 / 1.9999999 等）在 T 锚点下自动归整，无需特判。</div>
+
+<h2>3 · 实现：复用 Issue #14 虚班机制，算法核心 0 改动</h2>
+<p>与奇数 ZXS 拆 @W/@B 完全同构，在 <b>IO 层</b>把一门小数课拆成两条记录：</p>
+<table>
+<tr><th>虚班</th><th>JXBID</th><th>周学时</th><th>上课周次 SKZCDM</th><th>含义</th></tr>
+<tr><td>基底班 @A</td><td>原ID<code>@A</code></td><td>L（整数）</td><td>原掩码全部 N 周</td><td>每周都上的部分</td></tr>
+<tr><td>增量班 @B</td><td>原ID<code>@B</code></td><td>1（整数）</td><td>原掩码的<b>前 r 周</b>子集</td><td>只在前 r 周多上 1 节</td></tr>
+</table>
+<p>为什么算法核心 0 改动：</p>
+<ul>
+<li>两条虚班都是<b>整数 ZXS</b>，走现有日模式生成，不再触发 ceil；</li>
+<li>共享同一教师（RWJSZCDM 同步裁剪）与班级 → 现有<b>按周冲突检查</b>天然保证两班不撞、也不与他人撞；</li>
+<li><code>paired_jxbid</code> + LCV「避同天」软约束（Issue #14 已实现）直接复用——可优先让 @B 与 @A <b>排在同一天相邻块</b>或错开，策略可调；</li>
+<li>排课结果后处理 <code>merge_virtual_jxb.py</code> 扩展识别 @A/@B，按周次合并回一门课输出。</li>
+</ul>
+
+<h3>3.1 连排块对齐（@B 是单节，怎么落格子）</h3>
+<div class="warn">增量班 @B 是每周 1 节。两种落法，建议做成开关：<br>
+<b>方案甲（默认）</b>：@B 直接按单节排（现有 ZXS=1 模式已支持，结果里已有"第3-3节"这类单节先例）；<br>
+<b>方案乙（更整齐）</b>：r 为偶数时把 @B 改写成"<b>隔周 2 节</b>"（周次掩码取前 r 周的奇数位），凑满 2 节标准块，
+教室利用更整齐——代价是"前段每周多1节"变成"前段隔周多2节"，总学时仍严格 = T。</div>
+
+<h2>4 · 边界情况（实测计数）</h2>
+<table>
+<tr><th>情况</th><th>门数</th><th>处理</th></tr>
+<tr><td>常规（1 ≤ L，L+1 ≤ 8）</td><td>462</td><td>直接拆 @A + @B</td></tr>
+<tr><td>L = 0（如 ZXS=0.5：T &lt; N，部分周不上课）</td><td>67</td><td>不需要基底班，<b>只生成 @B</b>（前 r 周每周 1 节），SKZCDM 裁剪即可</td></tr>
+<tr><td>L+1 &gt; 8（ZXS=10.5 短周次集中课）</td><td>3</td><td>超出"每周≤8节"能力边界，归入集中授课专项（与静默跳过统计中 57 门同类），本方案不覆盖</td></tr>
+</table>
+
+<h2>5 · 工作量与验收</h2>
+<table>
+<tr><th>阶段</th><th>内容</th><th>产出/改动</th><th>预估</th></tr>
+<tr><td>P1 拆分脚本</td><td>新建 <code>scripts/split_fractional_zxs.py</code>：读 T=学时XS、算 L/r、裁 SKZCDM 与 RWJSZCDM、写 @A/@B、挂 paired_jxbid；含 dry-run 与备份</td><td>新脚本 ~150 行</td><td>0.5 天</td></tr>
+<tr><td>P2 合并回写</td><td>扩展 <code>merge_virtual_jxb.py</code> 识别 @A/@B 后缀</td><td>~20 行</td><td>0.5 小时</td></tr>
+<tr><td>P3 守恒校验</td><td>新建校验：∀课程 Σ(实排节数×周) == T，进 CI 式自检脚本</td><td>~40 行</td><td>0.5 小时</td></tr>
+<tr><td>P4 端到端验证</td><td>拆分后重跑 balanced，比对：成功率不降、532 门课总学时残差=0、超排 2473 节归零</td><td>一次完整运行</td><td>~16 小时机器时间</td></tr>
+</table>
+<p>算法核心（tryloadlimit / utils1 的搜索与冲突检查）<b>零改动</b>；仅当采用方案乙时在拆分脚本里多一个掩码变换。
+风险主要在 P4：拆分使待排班数 +532（@B），首轮规模 4666 → ~5100，预计运行时长增加 10~15%。</p>
+
+<h2>6 · 决策点（需要你拍板）</h2>
+<table>
+<tr><th>#</th><th>问题</th><th>建议</th></tr>
+<tr><td>1</td><td>增量周放在<b>前 r 周</b>还是后 r 周？</td><td>前段（学期前紧后松，符合教学习惯；也可做成参数）</td></tr>
+<tr><td>2</td><td>@B 单节排（甲）还是隔周 2 节（乙）？</td><td>先甲后乙：甲实现零额外逻辑，乙作为二期优化</td></tr>
+<tr><td>3</td><td>@B 是否软约束"与 @A 同天相邻"？</td><td>建议开：老师同一天连堂，减少往返（复用 Issue #14 的 δ 项，权重取反即可）</td></tr>
+<tr><td>4</td><td>T 用 学时XS 还是 理论学时LLXS？</td><td>用 LLXS（=0/空已被过滤的口径一致）；两者不等时以 LLXS 为准并出差异清单给教务</td></tr>
+</table>
+
+<div class="foot">docs/未来计划_小数周学时精确排课.html · 数据实测口径：课程表_split_merged.xlsx（532 门小数 ZXS、SFXYPK=1）· 守恒恒等式 (L+1)r + L(N−r) = T</div>
+</body></html>

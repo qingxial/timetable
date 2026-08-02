@@ -1,3 +1,10 @@
+"""
+基础数据模型与加载模块（项目最底层，被几乎所有模块依赖）。
+
+定义 Course / Classroom / Teacher / Class 四个数据类，
+以及对应的 load_courses / load_classrooms / load_teachers / load_classes
+函数，从「智能排课基础数据」目录下的 Excel 表读取数据。
+"""
 from dataclasses import dataclass, field
 from typing import Optional
 from openpyxl import load_workbook
@@ -24,6 +31,7 @@ class Course:
     SKXQ: str            # 上课校区
     JXBID: str           # 教学班ID
     KRL: int             # 课容量
+    LLXS: float          # 理论学时（=0 表示无理论课时，不参与排课，Issue #12）
     SKZCDM: str          # 上课周次代码
     ZXS: int             # 周学时
     # 教师相关
@@ -34,6 +42,8 @@ class Course:
     # 排课需求
     SFXYPK: int          # 是否需要排课
     SFXYJAS: int         # 是否需要教室
+    IF_ROOM_CONFICT: int   # 教室是否允许冲突：1=允许多班共占同一教室(不检查、不写占用)，0/缺省=正常检查(Issue #13)
+    IF_CLASS_CONFICT: int  # 班级是否允许冲突：1=该课不参与班级冲突检查(不检查、不写占用)，0/缺省=正常检查(Issue #13)
     JASLXDM: str         # 教室类型代码
     JASLXMC: str         # 教室类型名称
     JXLDM: str           # 教学楼代码
@@ -50,7 +60,17 @@ class Course:
     # 当前是否已成功占用时间表（用于调课时只在「已排上」的课程中选匹配对象）
     IF_scheduled: bool = False
 
-    timetable: np.ndarray = field(init=False)  
+    # 虚班拆分（Issue #14）：奇数 ZXS 拆 @W/@B 两条记录，paired_jxbid 指向另一条
+    paired_jxbid: Optional[str] = None
+
+    # 特殊要求·统一优先级解析产物（Q2）：由 apply_special_requirements.resolve_effective 写入课程表列，
+    #   max_block=每天连排上限(默认2)、block_template="4,4" 等连排块模板；schedule_class 读取以放宽连排。
+    max_block: Optional[str] = None
+    block_template: Optional[str] = None
+
+    timetable: np.ndarray = field(init=False)
+    # 已排上的星期集合（用于 LCV "避同天" 软约束查询，O(1) 命中）
+    scheduled_days: set = field(init=False)
 
     def __post_init__(self):
         # 初始化全空字符串的三维数组
@@ -59,6 +79,7 @@ class Course:
             fill_value="",  # 默认空字符串表示未安排
             dtype='U20'     # 支持最多20个Unicode字符
         )
+        self.scheduled_days = set()
 
 
 def load_courses(
@@ -71,30 +92,115 @@ def load_courses(
     wb = load_workbook(excel_path)
     ws = wb.active
 
-    # 获取英文表头（第二行）
+    # 双行表头：第一行中文名、第二行英文字段名
+    headers_cn = [cell.value for cell in ws[1]]
     headers = [cell.value for cell in ws[2]]
-    
+
     # 获取Course类接受的参数
     import inspect
     course_params = inspect.signature(Course.__init__).parameters.keys()
     course_params = [p for p in course_params if p != 'self']
-    
+
+    # 部分新增列（理论学时 / 是否检查教室冲突 / 是否检查班级冲突）当前只有中文表头，
+    # 第二行英文字段名为空，这里按中文表头前缀回退识别，保证仍能加载（Issue #12 / #13）。
+    def _resolve_param(en, cn):
+        if en in course_params:
+            return en
+        s = str(cn).strip() if cn is not None else ''
+        if s.startswith('理论学时'):
+            return 'LLXS'
+        if s.startswith('是否检查教室冲突'):
+            return 'IF_ROOM_CONFICT'
+        if s.startswith('是否检查班级冲突'):
+            return 'IF_CLASS_CONFICT'
+        return None
+
+    col_params = [_resolve_param(en, cn) for en, cn in zip(headers, headers_cn)]
+
+    # 数值字段：openpyxl 读出的可能是 str/int/float 混杂，统一转为 float（避免下游算术报错）
+    NUMERIC_FIELDS = {"ZXS", "KRL"}
+
     courses = []
     for row_num in range(3, ws.max_row + 1):
-        # 只收集Course类支持的参数
+        # 只收集Course类支持的参数（按列解析后的字段名映射）
         course_data = {}
-        for col_num, header in enumerate(headers):
-            if header in course_params:
-                course_data[header]= ws.cell(row=row_num, column=col_num+1).value
-                # raw_val = ws.cell(row=row_num, column=col_num+1).value
-                # course_data[header] = normalize_empty(raw_val)
-        
+        for col_num, param in enumerate(col_params):
+            if param is not None and param in course_params:
+                raw = ws.cell(row=row_num, column=col_num+1).value
+                if param in NUMERIC_FIELDS and raw not in (None, ''):
+                    try:
+                        raw = float(raw)
+                    except (TypeError, ValueError):
+                        pass  # 保留原值，由下游容错处理
+                course_data[param] = raw
+
+        # 新增开关字段在「缺列 / 空表头」时的默认值：
+        #   LLXS=None                          → 不因理论学时过滤（保持既有行为）
+        #   IF_ROOM_CONFICT / IF_CLASS_CONFICT = 0 → 默认正常检查冲突（向后兼容）
+        course_data.setdefault('LLXS', None)
+        course_data.setdefault('IF_ROOM_CONFICT', 0)
+        course_data.setdefault('IF_CLASS_CONFICT', 0)
+
         # 添加固定参数
         course_data.update(weeks=weeks, days=days, periods=periods)
         courses.append(Course(**course_data))
-    
+
+    # 虚班拆分（Issue #14）：填充 paired_jxbid
+    # JXBID 形如 "原ID@W" / "原ID@B" 的，把同 base 的两条互相挂指针
+    _by_base = {}
+    for c in courses:
+        jx = str(c.JXBID or "")
+        if "@" in jx:
+            base, suffix = jx.rsplit("@", 1)
+            if suffix in ("W", "B"):
+                _by_base.setdefault(base, []).append(c)
+    for base, group in _by_base.items():
+        if len(group) == 2:
+            group[0].paired_jxbid = group[1].JXBID
+            group[1].paired_jxbid = group[0].JXBID
+
     return courses
 
+
+# ---------------------------------------------------------------------------
+# 排课开关辅助函数（Issue #12 理论学时 / Issue #13 教室·班级冲突检查开关）
+# 这些字段在不同数据源里可能是 int 1/0 或 str '1'/'0'，统一在此判定，避免散落比较。
+# 语义（按数据所有者口径，不看中文表头字面）：
+#   IF_ROOM_CONFICT  == 1 → 允许教室冲突（体育馆多班共占等），不检查、不写教室占用
+#   IF_ROOM_CONFICT  == 0 / 缺省 → 不允许冲突，按正常排课检查并写入
+#   IF_CLASS_CONFICT 同上
+# ---------------------------------------------------------------------------
+def _conflict_allowed(v) -> bool:
+    """显式 '1' / 1 / 1.0 才表示「允许冲突」（即跳过检查）；其余一律按需检查。"""
+    if v is None:
+        return False
+    s = str(v).strip()
+    return s in ('1', '1.0')
+
+
+def check_room_conflict(course) -> bool:
+    """该课程是否需要检查教室冲突。IF_ROOM_CONFICT==1 → 允许冲突，不检查；其它一律检查。"""
+    return not _conflict_allowed(getattr(course, 'IF_ROOM_CONFICT', 0))
+
+
+def check_class_conflict(course) -> bool:
+    """该课程是否需要检查班级冲突。IF_CLASS_CONFICT==1 → 允许冲突，不检查；其它一律检查。"""
+    return not _conflict_allowed(getattr(course, 'IF_CLASS_CONFICT', 0))
+
+
+def llxs_schedulable(course) -> bool:
+    """理论学时是否需要排课（Issue #12）。
+    仅当 LLXS 是 > 0 的数值才参与排课；==0 / 空 / None / 非数值 一律过滤。"""
+    v = getattr(course, 'LLXS', None)
+    if v is None:
+        return False
+    s = str(v).strip()
+    if s in ('', 'None', 'nan'):
+        return False
+    try:
+        return float(s) > 0
+    except (TypeError, ValueError):
+        return False
 
 
 @dataclass
