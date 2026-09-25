@@ -115,6 +115,57 @@ class ResourceSafetyTests(unittest.TestCase):
 
 
 class ConstraintPolicyTests(unittest.TestCase):
+    def test_single_period_any_uses_an_even_slot_between_occupied_odd_slots(self):
+        old = course("OLD", hours=1.0)
+        target = course("TARGET", hours=1.0)
+        data = dataset([old, target], [placed("OLD", periods=(1,))])
+        result = repair(data, [target.id], policy(periods=[1, 2], single_period_starts="any"))
+        self.assertEqual(result["summary"]["inserted"], 1)
+        self.assertEqual(result["summary"]["moved"], 0)
+        self.assertEqual(final_for(result, target.id)[0]["periods"], [2])
+        self.assertEqual(result["config"]["single_period_starts"], "any")
+
+    def test_single_period_default_preserves_the_odd_start_grid(self):
+        target = course("TARGET", hours=1.0)
+        data = dataset([target])
+        default = repair(data, [target.id], policy(periods=[2]))
+        explicit = repair(data, [target.id], policy(periods=[2], single_period_starts="odd"))
+        self.assertEqual(default["summary"]["inserted"], 0)
+        self.assertEqual(default["placements"], explicit["placements"])
+        self.assertEqual(default["results"], explicit["results"])
+        self.assertEqual(default["config"]["single_period_starts"], "odd")
+
+    def test_single_period_any_still_obeys_course_school_and_added_bans(self):
+        for day, period, unavailable, additional in ((0, 2, "周一(2-2节)", ""),
+                                                    (1, 6, "", ""),
+                                                    (0, 2, "", "周一(2-2节)")):
+            with self.subTest(day=day, unavailable=unavailable, additional=additional):
+                target = course("TARGET", hours=1.0, unavailable=unavailable,
+                                prefer=f"周{'一二'[day]}({period}-{period}节)")
+                result = repair(dataset([target]), [target.id], policy(
+                    days=[day], periods=[period], single_period_starts="any", additional_forbidden=additional))
+                self.assertEqual(result["summary"]["inserted"], 0)
+                self.assertEqual(result["changes"], [])
+                self.assertFalse(result["results"][0]["diagnosis"]["preference_grid_mismatch"])
+
+    def test_single_period_any_does_not_change_multi_period_block_grid(self):
+        for length in (2, 3):
+            target = course("TARGET", hours=float(length), max_block=length, block_template=(length,))
+            for mode in ("odd", "any"):
+                with self.subTest(length=length, mode=mode):
+                    even = repair(dataset([target]), [target.id], policy(
+                        periods=list(range(2, 2 + length)), single_period_starts=mode))
+                    odd = repair(dataset([target]), [target.id], policy(
+                        periods=list(range(3, 3 + length)), single_period_starts=mode))
+                    self.assertEqual(even["summary"]["inserted"], 0)
+                    self.assertEqual(odd["summary"]["inserted"], 1)
+                    self.assertEqual(final_for(odd, target.id)[0]["periods"], list(range(3, 3 + length)))
+
+    def test_single_period_start_policy_rejects_unknown_values(self):
+        for value in ("all", "even", "", None, True):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                policy(single_period_starts=value).validate()
+
     def test_recognized_college_requirement_needs_review_for_time_relaxation(self):
         a = course("A")
         c = course("TARGET", prefer="周一(1-2节)", special="学院：计算机 资环；时间：周一1.2")

@@ -7,6 +7,8 @@ description: 诊断 qingxial/timetable 的未排课程，使用参数化修复�
 
 定位用户的 `qingxial/timetable` 仓库，确认包含 `scripts/repair_courses.py`；使用仓库自己的 Python 依赖。先读 `docs/参数化排课修复工具.md` 获取输入路径、参数和限制。没有 pickle 也能从 Excel 重建状态。
 
+需要作为 agent 工具调用时，读 `docs/Agent排课工具接口.md`，使用 `scripts.timetable_agent_tools.TOOL_SCHEMAS` 和 `dispatch_tool` 的诊断、试排、比较接口。请求必须显式给出 `allowed_changes`。已保存的授权配置仅适用于配套 policy 文件的输入和课程范围；先核对哈希与会话授权。优先在原约束下扩大候选预算，不能把搜索截断当成必须放宽规则的证据。
+
 1. 使用同一组输入文件运行严格基线，保留输出中的源文件 SHA-256。按唯一教学班 ID 计数，多教师行、多个时间段不能重复计为多门课；`@W/@B` 与原班口径分别说明。
 2. 从 `diagnosis.csv` 和 `proposal.json` 的证据判断：教室静态匹配为空、时间窗口不相容、资源阻塞、班级覆盖缺失、课时字段不一致，或搜索预算不足。不能把“没找到”写成“无解”。
 3. 根据用户已授权的范围构造 JSON 参数：`target_ids`、`allowed_changes`、`time_scope`、`locked_ids`、`movable_ids`、`max_moved_courses` 和搜索预算。普通偏好与学院指定时段分别处理；只有明确作为可调因素审核过的课程才进入 `reviewed_soft_time_ids`。假设场景必须标注条件，不能当作已获批准的正式课表。

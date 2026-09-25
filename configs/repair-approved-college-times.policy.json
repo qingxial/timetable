@@ -1,0 +1,22 @@
+{
+  "scope": "学院指定上课时段可按工作日范围调整",
+  "status": "user_approved",
+  "config": "repair-approved-college-times.json",
+  "source_hashes": {
+    "courses": "ca830a4806d17f9949d7dca76f9ef6d47ba5e6fccb969e8b0b2e880c3ea870d7",
+    "rooms": "d1ea46160d052ca783c40501e846b41c4d9e921c0d80cec6a302e9966bc883fc",
+    "schedule": "abafcb561ed8eeff684195b8d06d4a277af4fee53ec8de1d8da98647edd8c224",
+    "classes": "37626e75deaf9e5223daf69e4c6946861884ff2dbc53486705041a154b45822a",
+    "failed": "831d07ca3435c6bbc7508365fa97912a51cad563205444a7d670ab1413de5ac1"
+  },
+  "approved_time_course_count": 108,
+  "capacity_basis": "KRL unchanged; actual enrollment has not been confirmed frozen",
+  "output_mode": "proposal; original workbooks are not overwritten",
+  "note": "授权保存为现有数据及所列课程的时间调整配置；不会自动扩展到人数、教学周、课时或新增课程。",
+  "verified_result": {
+    "inserted": 89,
+    "remaining": 73,
+    "moved_original_courses": 0
+  },
+  "authorization_record": "本次会话用户明确允许学院指定时段调整；人数口径没有新增授权。"
+}

@@ -39,6 +39,7 @@ class RepairConfig:
     days: list[int] = field(default_factory=lambda: list(range(5)))
     periods: list[int] = field(default_factory=lambda: list(range(1, 9)))
     additional_forbidden: str = ""  # Additional bans; cannot remove the school ban.
+    single_period_starts: str = "odd"  # any expands only one-period blocks.
 
     def validate(self):
         unknown = set(self.allowed_changes) - ALLOWED_CHANGES
@@ -46,6 +47,8 @@ class RepairConfig:
             raise ValueError(f"Unsupported adjustments: {sorted(unknown)}")
         if self.time_scope not in {"strict", "same_day", "weekdays"}:
             raise ValueError("time_scope must be strict, same_day, or weekdays")
+        if self.single_period_starts not in ("odd", "any"):
+            raise ValueError("single_period_starts must be odd or any")
         for name in ("target_ids", "locked_ids", "movable_ids", "allowed_changes", "reviewed_soft_time_ids"):
             value = getattr(self, name)
             if not isinstance(value, list) or any(not isinstance(v, str) for v in value):
@@ -284,9 +287,10 @@ class CandidateFactory:
         # alignment is an explicit engine convention, not physical impossibility.
         slots = {}
         for length in set(blocks):
+            step = 1 if length == 1 and self.config.single_period_starts == "any" else 2
             slots[length] = sorted([
                 (d, tuple(range(start, start + length)))
-                for d in sorted(set(self.config.days)) for start in range(1, 12, 2)
+                for d in sorted(set(self.config.days)) for start in range(1, 12, step)
                 if all((d, p) in domain for p in range(start, start + length))
             ], key=lambda s: (preference_cost(*s, pref), s))
         if any(not slots[b] for b in blocks):
@@ -294,6 +298,14 @@ class CandidateFactory:
             diag["preference_grid_mismatch"] = bool(pref and not any(
                 all((d, p) in pref for p in range(s, s + 2))
                 for d in range(7) for s in range(1, 11, 2)))
+            if self.config.single_period_starts == "any":
+                # A valid even single period blocked by a ban is not a grid
+                # mismatch. Leave the legacy diagnostic unchanged in odd mode.
+                diag["preference_grid_mismatch"] = bool(pref and any(
+                    not any(all((d, p) in pref for p in range(start, start + length))
+                            for d in range(7)
+                            for start in range(1, 12, 1 if length == 1 else 2))
+                    for length in set(blocks)))
             return []
         patterns = []
         # Bound enumeration separately from the returned room/pattern count.
