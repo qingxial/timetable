@@ -25,6 +25,7 @@ __pycache__/
 
 # Logs and caches
 /repair-runs/
+/repair-output/
 *.log
 log*.txt
 logs/

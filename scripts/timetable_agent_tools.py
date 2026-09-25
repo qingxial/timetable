@@ -1,7 +1,8 @@
 """JSON tool boundary for the existing bounded timetable repair engine.
 
 This module proposes and diagnoses; it does not publish a timetable, infer
-permission from natural language, execute generated code, or prove UNSAT.
+permission from natural language, or execute generated code. Exact conflict
+certificates are explicitly scoped to their finite candidate model.
 """
 from __future__ import annotations
 
@@ -35,12 +36,15 @@ _IDS = {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueIte
 CONFIG_SCHEMA = _object({
     "allowed_changes": {"type": "array", "items": {"type": "string", "enum": [
         "time_preference", "building_preference", "historical_room"]}, "uniqueItems": True},
-    "time_scope": {"type": "string", "enum": ["strict", "same_day", "weekdays"]},
+    "time_scope": {"type": "string", "enum": ["strict", "same_day", "weekdays", "configured_days"]},
     "single_period_starts": {"type": "string", "enum": ["odd", "any"]},
     "target_ids": _IDS, "locked_ids": _IDS, "movable_ids": _IDS, "reviewed_soft_time_ids": _IDS,
     "max_moved_courses": {"type": "integer", "minimum": 0, "maximum": 3},
     "max_candidates_per_course": {"type": "integer", "minimum": 1},
     "max_search_nodes": {"type": "integer", "minimum": 1},
+    "max_weekly_hours": {"type": "integer", "minimum": 1, "maximum": 77},
+    "max_blocks_per_day": {"type": "integer", "minimum": 1, "maximum": 11},
+    "filter_fixed_occupancy": {"type": "boolean"},
     "time_limit_seconds": {"type": "number", "exclusiveMinimum": 0},
     "days": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 6}, "minItems": 1, "uniqueItems": True},
     "periods": {"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 11}, "minItems": 1, "uniqueItems": True},
@@ -61,6 +65,76 @@ TOOL_SCHEMAS = [
      "parameters": _object({"proposal_paths": {"type": "array", "items": _PATH, "minItems": 2, "uniqueItems": True}},
                            ["proposal_paths"])},
 ]
+_NONNEGATIVE = {"type": "number", "minimum": 0}
+_CORRECTION_BASE = {"course_id": {"type": "string", "minLength": 1}, "evidence": _PATH}
+def _correction_schema(operation, properties, required):
+    return _object({**_CORRECTION_BASE, "operation": {"type": "string", "enum": [operation]}, **properties},
+                   ["course_id", "operation", "evidence", *required])
+CORRECTIONS_SCHEMA = {"type": "array", "items": {"oneOf": [
+    _correction_schema("redistribute_hours", {
+        "expected_weekly_hours": _NONNEGATIVE, "expected_total_hours": _NONNEGATIVE,
+        "authoritative_field": {"type": "string", "enum": ["LLXS"]},
+        "strategy": {"type": "string", "enum": ["balanced_frontload"]},
+        "allocation_unit": {"type": "integer", "enum": [1, 2]},
+        "weekly_loads": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 1, "maximum": 77}},
+    }, ["expected_weekly_hours", "expected_total_hours", "authoritative_field"]),
+    _correction_schema("set_capacity", {"expected_capacity": _NONNEGATIVE,
+        "capacity": {"type": "number", "exclusiveMinimum": 0}, "enrollment_frozen": {"type": "boolean", "enum": [True]}},
+        ["expected_capacity", "capacity", "enrollment_frozen"]),
+    _correction_schema("replace_classes", {"expected_classes": _IDS, "classes": {**_IDS, "minItems": 1}},
+        ["expected_classes", "classes"]),
+    _correction_schema("set_one_off_week", {
+        "expected_weekly_hours": {"type": "number", "enum": [0]},
+        "expected_total_hours": {"type": "integer", "minimum": 1, "maximum": 11},
+        "teaching_week": {"type": "integer", "minimum": 1, "maximum": 53},
+        "weeks_confirmed": {"type": "boolean", "enum": [True]},
+    }, ["expected_weekly_hours", "expected_total_hours", "teaching_week", "weeks_confirmed"]),
+    _correction_schema("quarantine_incomplete_segments", {"expected_incomplete_count": {"type": "integer", "minimum": 1}},
+        ["expected_incomplete_count"]),
+]}}
+_SOURCE_PROPERTIES = {"course_path": _PATH, "room_path": _PATH, "schedule_path": _PATH,
+                      "failed_path": _PATH, "class_path": _PATH, "corrections": CORRECTIONS_SCHEMA}
+_SOURCE_REQUIRED = ["course_path", "room_path", "schedule_path", "failed_path"]
+OPTIMIZER_SCHEMA = _object({
+    "quality_weights": _object({key: _NONNEGATIVE for key in ("time_preference", "evening", "weekend")},
+                               ["time_preference", "evening", "weekend"]),
+    "time_limit_seconds": {"type": "number", "exclusiveMinimum": 0},
+    "max_search_nodes": {"type": "integer", "minimum": 1},
+    "candidate_limit_per_course": {"type": "integer", "minimum": 1},
+}, ["quality_weights"])
+EXPLAIN_SCHEMA = _object({
+    "max_candidates_per_course": {"type": "integer", "minimum": 1},
+    "max_nodes": {"type": "integer", "minimum": 1},
+    "max_oracle_calls": {"type": "integer", "minimum": 1},
+    "time_limit_seconds": {"type": "number", "exclusiveMinimum": 0},
+    "allow_scoped_proof": {"type": "boolean"},
+}, [])
+TOOL_SCHEMAS[1]["parameters"]["properties"]["corrections"] = CORRECTIONS_SCHEMA
+for _name, _description, _extras, _required in [
+    ("repair_with_fallbacks", "Try daytime, then evening, then weekend only within the explicit caller domain, preserving earlier successful placements; optional audited input corrections.",
+     {"config": CONFIG_SCHEMA, "stages": {"type": "array", "items": {"type": "string", "enum": ["daytime", "evening", "weekend"]}, "uniqueItems": True, "minItems": 1},
+      "total_time_limit_seconds": {"type": "number", "exclusiveMinimum": 0}}, ["config"]),
+    ("preview_data_corrections", "Validate explicit correction operations against original values and evidence, return audit and effective data hash without writing workbooks.", {}, ["corrections"]),
+    ("optimize_local_repair", "Phillips-inspired joint finite-domain search: maximize complete insertions, then minimize original-course moves and quality cost. Proofs are scoped to retained candidates.",
+     {"config": CONFIG_SCHEMA, "optimizer_config": OPTIMIZER_SCHEMA}, ["config", "optimizer_config"]),
+    ("quality_frontier", "Lindahl-inspired movement-budget comparison using the same candidate domain, success level and shared runtime budget; explicit evening/weekend weights.",
+     {"config": CONFIG_SCHEMA, "optimizer_config": OPTIMIZER_SCHEMA,
+      "movement_budgets": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 3}, "minItems": 1, "uniqueItems": True}}, ["config", "optimizer_config", "movement_budgets"]),
+    ("explain_conflict", "QuickXplain over an exact finite-candidate oracle with SAT/UNSAT/UNKNOWN, background checks and deletion verification. Releasing occupancy is an explanation, not a complete movement plan.",
+     {"config": CONFIG_SCHEMA, "explain_config": EXPLAIN_SCHEMA}, ["config", "explain_config"]),
+    ("plan_course_corrections", "Return specific per-course correction actions, source rows, proposed values, required evidence and revalidation conditions, including optional skipped-course records.",
+     {"proposal_path": _PATH, "source_workbook": _PATH, "skipped_path": _PATH}, ["proposal_path"]),
+    ("extend_repair_proposal", "Validate and preserve every successful insertion in an existing no-move proposal, then try an explicit additional target list using day/evening/weekend stages. The seed corrections must be an exact prefix of the supplied corrections.",
+     {"seed_proposal_path": _PATH, "additional_target_ids": {**_IDS, "minItems": 1},
+      "config": CONFIG_SCHEMA,
+      "stages": {"type": "array", "items": {"type": "string", "enum": ["daytime", "evening", "weekend"]}, "uniqueItems": True, "minItems": 1},
+      "total_time_limit_seconds": {"type": "number", "exclusiveMinimum": 0}},
+     ["seed_proposal_path", "additional_target_ids", "config"]),
+]:
+    TOOL_SCHEMAS.append({"type": "function", "name": _name, "description": _description,
+                         "parameters": _object({**_SOURCE_PROPERTIES, **_extras}, [*_SOURCE_REQUIRED, *_required])})
+
+
 REQUEST_SCHEMA = _object({"name": {"type": "string", "minLength": 1}, "arguments": {"type": "object"}},
                          ["name", "arguments"])
 
@@ -73,6 +147,17 @@ class ToolError(ValueError):
 
 def _validate(value, schema, location="arguments"):
     """Validate the small, explicit JSON Schema vocabulary published above."""
+    if "oneOf" in schema:
+        matches = 0
+        for candidate in schema["oneOf"]:
+            try:
+                _validate(value, candidate, location)
+                matches += 1
+            except ToolError:
+                pass
+        if matches != 1:
+            raise ToolError("invalid_arguments", f"{location} must match exactly one supported operation schema")
+        return
     kind = schema.get("type")
     try:
         finite_number = type(value) in (int, float) and math.isfinite(value)
@@ -82,6 +167,7 @@ def _validate(value, schema, location="arguments"):
         "object": isinstance(value, dict), "array": isinstance(value, list),
         "string": isinstance(value, str), "integer": type(value) is int,
         "number": finite_number,
+        "boolean": type(value) is bool,
     }.get(kind, False)
     if not valid:
         raise ToolError("invalid_arguments", f"{location} must be {kind}")
@@ -97,6 +183,8 @@ def _validate(value, schema, location="arguments"):
         for key, item in value.items():
             if key in schema.get("properties", {}):
                 _validate(item, schema["properties"][key], f"{location}.{key}")
+            elif isinstance(schema.get("additionalProperties"), dict):
+                _validate(item, schema["additionalProperties"], f"{location}.{key}")
     elif kind == "array":
         if len(value) < schema.get("minItems", 0):
             raise ToolError("invalid_arguments", f"{location} has too few items")
@@ -170,7 +258,7 @@ def _read_failed(path):
 def _proposal(path):
     proposal = _read_json(path)
     # CLI responses can be consumed directly, as can legacy proposal.json files.
-    if isinstance(proposal, dict) and proposal.get("ok") is True and proposal.get("tool") == "propose_repair":
+    if isinstance(proposal, dict) and proposal.get("ok") is True and proposal.get("tool") in {"propose_repair", "repair_with_fallbacks", "optimize_local_repair", "extend_repair_proposal"}:
         envelope_result = proposal.get("result")
         proposal = envelope_result.get("proposal") if isinstance(envelope_result, dict) else None
     if (not isinstance(proposal, dict) or proposal.get("mode") != "proposal"
@@ -232,29 +320,89 @@ def _diagnose(arguments):
 
 
 def _propose(arguments):
-    config = RepairConfig(**deepcopy(arguments["config"]))
-    config.validate()
-    paths = {"courses": Path(arguments["course_path"]), "rooms": Path(arguments["room_path"]),
-             "schedule": Path(arguments["schedule_path"]), "failed": Path(arguments["failed_path"])}
+    return _run_repair_tool("propose_repair", arguments)
+
+
+def _run_repair_tool(name, arguments):
+    try:
+        from .repair_workflows import apply_data_corrections, repair_with_fallbacks
+        from .repair_optimizer import optimize_local, quality_frontier
+        from .repair_explanations import explain_conflict
+        from .repair_action_plans import build_action_plans, load_action_plan_supplemental
+        from .repair_extensions import extend_repair_proposal
+    except ImportError:
+        from repair_workflows import apply_data_corrections, repair_with_fallbacks
+        from repair_optimizer import optimize_local, quality_frontier
+        from repair_explanations import explain_conflict
+        from repair_action_plans import build_action_plans, load_action_plan_supplemental
+        from repair_extensions import extend_repair_proposal
+    paths = {key: Path(arguments[f"{key[:-1] if key in ('courses', 'rooms') else key}_path"])
+             for key in ("courses", "rooms", "schedule", "failed")}
     class_path = Path(arguments["class_path"]) if "class_path" in arguments else paths["courses"].parent / "班级表.xlsx"
     if "class_path" in arguments or class_path.is_file():
         paths["classes"] = class_path
+    for key in ("source_workbook", "skipped_path"):
+        if key in arguments:
+            paths[key] = Path(arguments[key])
     before = {key: _hash(path) for key, path in paths.items()}
     data = load_dataset(paths["courses"], paths["rooms"], paths["schedule"], paths.get("classes"))
     targets = _read_failed(paths["failed"])
-    # The explicit failed workbook remains the target universe; a configured
-    # target_ids subset cannot silently introduce courses outside it.
-    outside = set(config.target_ids) - set(targets)
+    data.source_hashes["failed"] = before["failed"]
+    seed = None
+    if name == "extend_repair_proposal":
+        seed = _proposal(arguments["seed_proposal_path"])
+        _metrics(seed)
+        seed_corrections = seed.get("correction_parameters", [])
+        supplied = arguments.get("corrections", [])
+        if supplied[:len(seed_corrections)] != seed_corrections:
+            raise ToolError("invalid_arguments", "Seed correction parameters must be an exact prefix of the supplied corrections")
+        extra_ids = set(arguments["additional_target_ids"])
+        if any(item['course_id'] not in extra_ids for item in supplied[len(seed_corrections):]):
+            raise ToolError("invalid_arguments", "Additional corrections may only affect additional targets")
+        seed_data, _ = apply_data_corrections(data, seed_corrections)
+        if seed_data.source_hashes != seed["source_hashes"]:
+            raise ToolError("incomparable_proposals", "Seed source/correction hashes do not match the replayed dataset")
+    data, audit = apply_data_corrections(data, arguments.get("corrections", []))
+    config = deepcopy(arguments.get("config", {"allowed_changes": []}))
+    policy = RepairConfig(**config); policy.validate()
+    outside = set(policy.target_ids) - set(arguments["additional_target_ids"] if name == "extend_repair_proposal" else targets)
     if outside:
         raise ToolError("invalid_arguments", "config.target_ids contains IDs outside the supplied failed-course workbook", sorted(outside))
-    data.source_hashes["failed"] = before["failed"]
-    proposal = repair(data, targets, config)
+    if name == "preview_data_corrections":
+        output = {"audit": audit, "effective_source_hashes": data.source_hashes,
+                  "mode": "correction_preview", "source_files_unchanged": True}
+    elif name == "quality_frontier":
+        output = quality_frontier(data, targets, config, arguments["optimizer_config"], arguments["movement_budgets"])
+    elif name == "explain_conflict":
+        output = explain_conflict(data, policy.target_ids or targets, config, arguments["explain_config"])
+    elif name == "plan_course_corrections":
+        proposal = _proposal(arguments["proposal_path"])
+        for key in ("courses", "rooms", "schedule", "classes", "corrections"):
+            if proposal["source_hashes"].get(key) != data.source_hashes.get(key):
+                raise ToolError("incomparable_proposals", "Action plan input differs from the proposal's effective dataset", key)
+        supplemental = load_action_plan_supplemental(arguments.get("source_workbook"), paths["courses"], arguments.get("skipped_path"), paths["schedule"])
+        output = build_action_plans(data, proposal, supplemental)
+    else:
+        if name == "extend_repair_proposal":
+            proposal = extend_repair_proposal(data, seed, arguments["additional_target_ids"], config,
+                arguments.get("stages"), arguments.get("total_time_limit_seconds", 180))
+        elif name == "repair_with_fallbacks":
+            proposal = repair_with_fallbacks(data, targets, config, arguments.get("stages"), arguments.get("total_time_limit_seconds", 180))
+        elif name == "optimize_local_repair":
+            proposal = optimize_local(data, targets, config, arguments["optimizer_config"])
+        else:
+            proposal = repair(data, targets, config)
+        proposal["input_corrections"] = audit
+        proposal["correction_parameters"] = deepcopy(arguments.get("corrections", []))
+        output = {"proposal": proposal, "policy": proposal["config"],
+                  "source_files_unchanged": True, "mode": "dry_run_proposal",
+                  "authorization_basis": "Only explicit caller parameters are executed; audit records retain original values and planning assumptions."}
     after = {key: _hash(path) for key, path in paths.items()}
-    if before != after or any(data.source_hashes.get(key) != digest for key, digest in before.items()):
-        raise ToolError("input_changed", "Source files changed during the run; proposal is rejected")
-    return {"proposal": proposal, "policy": asdict(config), "source_files_unchanged": True,
-            "authorization_basis": "Only caller-supplied config is used; natural language is not interpreted as permission. This tool does not authorize publication.",
-            "mode": "dry_run_proposal"}
+    if before != after or any(data.source_hashes.get(key) != before[key] for key in ("courses", "rooms", "schedule", "failed")):
+        raise ToolError("input_changed", "Source files changed during the run; result rejected")
+    output["source_files_unchanged"] = True
+    output["input_corrections"] = audit
+    return output
 
 
 def _metrics(proposal):
@@ -297,13 +445,13 @@ def _compare(arguments):
     # A failed-list path may differ between exports. The target-set equality
     # check below protects that dimension; baseline resource content must match.
     def baseline(proposal):
-        return {key: proposal["source_hashes"].get(key) for key in ("courses", "rooms", "schedule", "classes")}
+        return {key: proposal["source_hashes"].get(key) for key in ("courses", "rooms", "schedule", "classes", "corrections")}
 
     reference = baseline(proposals[0])
     targets = {r["course_id"] for r in proposals[0]["results"]}
     for proposal in proposals[1:]:
         if baseline(proposal) != reference:
-            raise ToolError("incomparable_proposals", "Baseline course/room/schedule/class source hashes differ")
+            raise ToolError("incomparable_proposals", "Baseline course/room/schedule/class/correction hashes differ")
         if {r["course_id"] for r in proposal["results"]} != targets:
             raise ToolError("incomparable_proposals", "Proposal target course sets differ")
     configs = [asdict(RepairConfig(**p["config"])) for p in proposals]
@@ -334,6 +482,8 @@ def dispatch_tool(name, arguments):
     try:
         _validate(arguments, schemas[name])
         handlers = {"diagnose_remaining": _diagnose, "propose_repair": _propose, "compare_proposals": _compare}
+        for tool_name in schemas.keys() - handlers.keys():
+            handlers[tool_name] = lambda args, selected=tool_name: _run_repair_tool(selected, args)
         return {"ok": True, "tool": name, "result": handlers[name](deepcopy(arguments))}
     except ToolError as error:
         return _error(name, error.code, str(error), error.details)

@@ -44,6 +44,7 @@ class Course:
     check_class: bool = True
     issues: list[str] = field(default_factory=list)
     total_hours: float | None = None
+    weekly_loads: dict[int, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -73,6 +74,7 @@ class Dataset:
     placements: list[Placement] = field(default_factory=list)
     issues: list[str] = field(default_factory=list)
     source_hashes: dict[str, str] = field(default_factory=dict)
+    class_registry: frozenset[str] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Return deterministic JSON-compatible data, including diagnostics."""
@@ -471,6 +473,7 @@ def load_dataset(course_path: str | Path, room_path: str | Path,
         if any("BJMC" not in row for _, row in class_rows):
             raise ValueError(f"class registry requires a single header row containing BJMC: {paths['classes']}")
         registry = frozenset(_text(row.get("BJMC")) for _, row in class_rows if _text(row.get("BJMC")))
+    dataset.class_registry = registry
     _load_courses(_read_table(paths["courses"], True), dataset, registry)
     if registry is None and any(course.check_class for course in dataset.courses.values()):
         dataset.issues.append("coverage: class registry unavailable; class identifiers use token checks only; "

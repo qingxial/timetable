@@ -9,7 +9,6 @@ import argparse
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field
 import csv
-import itertools
 import json
 import math
 from pathlib import Path
@@ -27,7 +26,7 @@ ALLOWED_CHANGES = {"time_preference", "building_preference", "historical_room"}
 @dataclass
 class RepairConfig:
     allowed_changes: list[str] = field(default_factory=list)
-    time_scope: str = "same_day"  # strict, same_day, weekdays
+    time_scope: str = "same_day"  # strict, same_day, weekdays, configured_days
     target_ids: list[str] = field(default_factory=list)
     locked_ids: list[str] = field(default_factory=list)
     movable_ids: list[str] = field(default_factory=list)
@@ -40,15 +39,25 @@ class RepairConfig:
     periods: list[int] = field(default_factory=lambda: list(range(1, 9)))
     additional_forbidden: str = ""  # Additional bans; cannot remove the school ban.
     single_period_starts: str = "odd"  # any expands only one-period blocks.
+    max_weekly_hours: int = 8
+    max_blocks_per_day: int = 1
+    filter_fixed_occupancy: bool = False
 
     def validate(self):
         unknown = set(self.allowed_changes) - ALLOWED_CHANGES
         if unknown:
             raise ValueError(f"Unsupported adjustments: {sorted(unknown)}")
-        if self.time_scope not in {"strict", "same_day", "weekdays"}:
-            raise ValueError("time_scope must be strict, same_day, or weekdays")
+        if self.time_scope not in {"strict", "same_day", "weekdays", "configured_days"}:
+            raise ValueError("time_scope must be strict, same_day, weekdays, or configured_days")
         if self.single_period_starts not in ("odd", "any"):
             raise ValueError("single_period_starts must be odd or any")
+        for name, upper in (("max_weekly_hours", 77), ("max_blocks_per_day", 11)):
+            if type(getattr(self, name)) is not int or not 1 <= getattr(self, name) <= upper:
+                raise ValueError(f"{name} must be an integer between 1 and {upper}")
+        if type(self.filter_fixed_occupancy) is not bool:
+            raise ValueError("filter_fixed_occupancy must be a boolean")
+        if self.filter_fixed_occupancy and self.max_moved_courses != 0:
+            raise ValueError("filter_fixed_occupancy requires max_moved_courses=0")
         for name in ("target_ids", "locked_ids", "movable_ids", "allowed_changes", "reviewed_soft_time_ids"):
             value = getattr(self, name)
             if not isinstance(value, list) or any(not isinstance(v, str) for v in value):
@@ -195,26 +204,41 @@ def structured_college_time(course):
         return False
 
 
+def weekend_only_requirement(course):
+    """An exact recognized hard rule; unknown free text remains unsupported."""
+    return course.special.strip() == "仅周六周日排课"
+
+
+def supported_special_requirement(course):
+    return structured_college_time(course) or weekend_only_requirement(course)
+
+
 def time_options(course, config):
     pref = parse_time_windows(course.prefer)
     forbidden = (parse_time_windows(course.unavailable) | parse_time_windows("周二(5-8节)")
                  | parse_time_windows(config.additional_forbidden))
     domain = {(d, p) for d in config.days for p in config.periods} - forbidden
+    if config.time_scope == "weekdays":
+        domain = {cell for cell in domain if cell[0] < 5}
     changes = effective_changes(course, config)
     if pref:
         if "time_preference" not in changes or config.time_scope == "strict":
             domain &= pref
         elif config.time_scope == "same_day":
             domain = {cell for cell in domain if cell[0] in {d for d, _ in pref}}
-        else:
-            domain = {cell for cell in domain if cell[0] < 5}
+    if weekend_only_requirement(course):
+        domain = {cell for cell in domain if cell[0] in (5, 6)}
+        # Keep both source fields when they disagree; a generic preference
+        # relaxation cannot resolve contradictory hard special requirements.
+        if pref:
+            domain &= pref
     return domain, pref
 
 
-def blocks_for(course):
+def blocks_for(course, max_weekly_hours=8):
     rounded = round(course.hours)
-    if not math.isfinite(course.hours) or abs(course.hours - rounded) > 1e-5 or not 1 <= rounded <= 8:
-        raise ValueError("unsupported_hours: requires an integer weekly load between 1 and 8")
+    if not math.isfinite(course.hours) or abs(course.hours - rounded) > 1e-5 or not 1 <= rounded <= max_weekly_hours:
+        raise ValueError(f"unsupported_hours: requires an integer weekly load between 1 and {max_weekly_hours}")
     if course.block_template:
         blocks = tuple(course.block_template)
     else:
@@ -222,6 +246,38 @@ def blocks_for(course):
     if sum(blocks) != rounded or any(b < 1 or b > course.max_block for b in blocks):
         raise ValueError("invalid_block_template")
     return blocks
+
+
+def required_week_load(course):
+    """Expected teaching load; explicit corrected plans preserve every source week."""
+    if not course.weekly_loads:
+        return {w: round(course.hours) for w in course.weeks}
+    loads = course.weekly_loads
+    if set(loads) != set(course.weeks) or any(type(w) is not int or type(n) is not int
+                                              or not 1 <= n <= 77 for w, n in loads.items()):
+        raise ValueError("weekly_loads must cover every teaching week with 1..77 integer hours")
+    if course.hours != max(loads.values()):
+        raise ValueError("hours must equal the maximum explicit weekly load")
+    if course.block_template and len(set(loads.values())) > 1:
+        raise ValueError("Variable weekly loads cannot silently shorten an explicit block template")
+    return dict(loads)
+
+
+def pattern_placements(course, combo, room_id):
+    if not course.weekly_loads:
+        return tuple(Placement(course.id, course.weeks, day, periods, room_id) for day, periods in combo)
+    loads = required_week_load(course)
+    entries, consumed = [], 0
+    for day, periods in combo:
+        groups = defaultdict(set)
+        for week, load in loads.items():
+            length = max(0, min(len(periods), load - consumed))
+            if length:
+                groups[tuple(periods[:length])].add(week)
+        entries.extend(Placement(course.id, frozenset(weeks), day, ps, room_id)
+                       for ps, weeks in sorted(groups.items()))
+        consumed += len(periods)
+    return tuple(entries)
 
 
 def preference_cost(day, periods, pref):
@@ -233,10 +289,15 @@ def preference_cost(day, periods, pref):
 
 
 class CandidateFactory:
-    def __init__(self, dataset, config, deadline=None):
+    def __init__(self, dataset, config, deadline=None, occupancy=None):
         self.dataset, self.config = dataset, config
         self.cache, self.diagnostics = {}, {}
         self.deadline = deadline if deadline is not None else float("inf")
+        # Occupancy is an explicit caller input: explanation tools that do not
+        # supply it retain the unpruned constraint domain.
+        self.occupancy = occupancy if config.filter_fixed_occupancy else None
+        if self.occupancy is not None and config.max_moved_courses != 0:
+            raise ValueError("Fixed-occupancy candidate filtering cannot be used with movements")
 
     def get(self, cid):
         if cid in self.cache:
@@ -244,20 +305,23 @@ class CandidateFactory:
         c = self.dataset.courses[cid]
         diag = {"course_id": cid, "course_name": c.name, "issues": list(c.issues),
                 "special_requirements_preserved": bool(c.special.strip() and c.id not in self.config.reviewed_soft_time_ids),
-                "truncated": False}
+                "truncated": False,
+                "fixed_occupancy_filter_requested": self.config.filter_fixed_occupancy,
+                "fixed_occupancy_filter_applied": self.occupancy is not None}
         self.diagnostics[cid] = diag
         self.cache[cid] = []
         if c.issues:
             diag["reason"] = "data_issue"
             return []
-        if c.special.strip() and not structured_college_time(c):
-            diag.update(reason="unreviewed_special_requirement", detail="Special text is not a structured college time requirement")
+        if c.special.strip() and not supported_special_requirement(c):
+            diag.update(reason="unreviewed_special_requirement", detail="Special text is not a supported structured time requirement")
             return []
         if any(marker in c.prefer for marker in ("[", "【", "［")):
             diag.update(reason="unsupported", detail="Grouped preference alternatives require a coupled pattern model")
             return []
         try:
-            blocks = blocks_for(c)
+            blocks = blocks_for(c, self.config.max_weekly_hours)
+            expected_load = required_week_load(c)
             domain, pref = time_options(c, self.config)
         except ValueError as exc:
             diag.update(reason="unsupported", detail=str(exc))
@@ -266,9 +330,9 @@ class CandidateFactory:
             diag.update(reason="data_issue", detail="missing teaching weeks or teacher")
             return []
         total = getattr(c, "total_hours", None)
-        if total is not None and abs(round(c.hours) * len(c.weeks) - total) > 1e-5:
+        if total is not None and abs(sum(expected_load.values()) - total) > 1e-5:
             diag.update(reason="source_hours_inconsistent", total_hours=total,
-                        weekly_hours_times_weeks=round(c.hours) * len(c.weeks))
+                        weekly_hours_times_weeks=sum(expected_load.values()))
             return []
         covered = set().union(*c.teachers.values())
         if not c.weeks <= covered:
@@ -283,7 +347,7 @@ class CandidateFactory:
                 reason for r in self.dataset.rooms.values() for reason in room_rejections(c, r, changes)))
             diag["reason"] = "no_matching_room"
             return []
-        # Preserve explicit block lengths, at most one block per day. Grid
+        # Preserve explicit block lengths and the configured daily block cap. Grid
         # alignment is an explicit engine convention, not physical impossibility.
         slots = {}
         for length in set(blocks):
@@ -307,35 +371,129 @@ class CandidateFactory:
                             for start in range(1, 12, 1 if length == 1 else 2))
                     for length in set(blocks)))
             return []
-        patterns = []
-        # Bound enumeration separately from the returned room/pattern count.
-        for count, combo in enumerate(itertools.product(*(slots[b] for b in blocks))):
-            if count % 64 == 0 and time.monotonic() >= self.deadline:
-                diag.update(reason="search_limit", truncated=True)
-                return []
-            if len({d for d, _ in combo}) != len(combo):
-                continue
-            if any(blocks[i] == blocks[j] and combo[i] >= combo[j]
-                   for i in range(len(blocks)) for j in range(i + 1, len(blocks))):
-                continue
-            cost = sum(preference_cost(d, ps, pref) for d, ps in combo)
-            patterns.append((cost, combo))
-            if len(patterns) >= self.config.max_candidates_per_course:
-                diag["truncated"] = True
-                break
-        patterns.sort()
+        # Equivalent blocks must have the same actual weekly role before their
+        # order can be canonicalized. A shortened final block is not symmetric
+        # with a full block just because their maximum lengths are equal.
+        roles, consumed = [], 0
+        for length in blocks:
+            roles.append((length, tuple((w, max(0, min(length, load - consumed)))
+                                        for w, load in sorted(expected_load.items()))))
+            consumed += length
         rooms.sort(key=lambda r: (r.id not in (c.explicit_rooms | c.historical_rooms),
                                   r.building not in c.buildings if c.buildings else False,
                                   r.capacity - c.capacity, r.id))
+        room_ids = tuple(r.id for r in rooms)
+        patterns, combo, occupied, day_counts = [], [], set(), Counter()
+        diag.update(generation_nodes=0, fixed_teacher_class_pruned_slots=0,
+                    fixed_room_pruned_slots=0, fixed_room_intersection_pruned_prefixes=0,
+                    candidate_cap_scope="retained_after_fixed_occupancy_filter" if self.occupancy is not None
+                    else "generated_patterns_and_room_assignments")
+        timed_out = False
+        slot_cache = {}
+
+        def expired():
+            nonlocal timed_out
+            if time.monotonic() >= self.deadline:
+                timed_out = True
+                diag.update(reason="search_limit", truncated=True)
+                return True
+            return False
+
+        def usable_slots(role):
+            if role in slot_cache:
+                return slot_cache[role]
+            options = []
+            for day, periods in slots[role[0]]:
+                if expired():
+                    break
+                available_rooms = None
+                if self.occupancy is not None:
+                    groups = defaultdict(set)
+                    for week, length in role[1]:
+                        if length:
+                            groups[periods[:length]].add(week)
+                    entries = tuple(Placement(cid, frozenset(weeks), day, ps, "")
+                                    for ps, weeks in groups.items())
+                    # An empty room ID yields only actual teacher/class keys.
+                    if any(self.occupancy.cells.get(key, set()) - {cid}
+                           for p in entries for key in keys_for(c, p)):
+                        diag["fixed_teacher_class_pruned_slots"] += 1
+                        continue
+                    if c.check_room:
+                        available_rooms = frozenset(rid for rid in room_ids if not any(
+                            self.occupancy.cells.get(("room", rid, week, day, period), set()) - {cid}
+                            for p in entries for week in p.weeks for period in p.periods))
+                        if not available_rooms:
+                            diag["fixed_room_pruned_slots"] += 1
+                            continue
+                options.append(((day, periods), available_rooms))
+            slot_cache[role] = options
+            return options
+
+        # Incremental construction rejects bad prefixes instead of expanding a
+        # Cartesian product. All blocks coexist in a maximum-load week, so day
+        # counts and overlap checks on the full pattern are conservative/exact
+        # for the supported prefix-truncated weekly plans.
+        def extend(index, cost, compatible_rooms):
+            if expired():
+                return
+            diag["generation_nodes"] += 1
+            if index == len(blocks):
+                feasible_rooms = room_ids if compatible_rooms is None else tuple(
+                    rid for rid in room_ids if rid in compatible_rooms)
+                patterns.append((cost, tuple(combo), feasible_rooms))
+                if len(patterns) >= self.config.max_candidates_per_course:
+                    diag["truncated"] = True
+                return
+            if sum(max(0, self.config.max_blocks_per_day - day_counts[d])
+                   for d in set(self.config.days)) < len(blocks) - index:
+                return
+            role = roles[index]
+            for slot, available_rooms in usable_slots(role):
+                if expired() or len(patterns) >= self.config.max_candidates_per_course:
+                    return
+                day, periods = slot
+                if day_counts[day] >= self.config.max_blocks_per_day:
+                    continue
+                if any((day, period) in occupied for period in periods):
+                    continue
+                if any(roles[prior] == role and combo[prior] >= slot for prior in range(index)):
+                    continue
+                remaining_rooms = compatible_rooms
+                if available_rooms is not None:
+                    remaining_rooms = available_rooms if compatible_rooms is None else compatible_rooms & available_rooms
+                    if not remaining_rooms:
+                        diag["fixed_room_intersection_pruned_prefixes"] += 1
+                        continue
+                combo.append(slot)
+                day_counts[day] += 1
+                occupied.update((day, period) for period in periods)
+                extend(index + 1, cost + preference_cost(day, periods, pref), remaining_rooms)
+                occupied.difference_update((day, period) for period in periods)
+                day_counts[day] -= 1
+                combo.pop()
+                if timed_out:
+                    return
+
+        supported_cells = {(day, period) for options in slots.values()
+                           for day, periods in options for period in periods}
+        if sum(blocks) <= len(supported_cells):
+            extend(0, 0, None)
+        else:
+            diag["insufficient_supported_grid_cells"] = len(supported_cells)
+        if timed_out:
+            return []
+        patterns.sort()
         result = []
-        # Round robin across time patterns avoids filling the cap with one slot's rooms.
-        for room_index in range(len(rooms)):
-            for cost, combo in patterns:
-                if time.monotonic() >= self.deadline:
-                    diag.update(reason="search_limit", truncated=True)
+        # Round robin over each pattern's feasible rooms preserves time-pattern
+        # diversity. No blocked pattern or blocked room consumes the output cap.
+        for room_index in range(max((len(available) for _, _, available in patterns), default=0)):
+            for cost, pattern, available in patterns:
+                if expired():
                     return []
-                room = rooms[room_index]
-                entries = tuple(Placement(cid, c.weeks, d, ps, room.id) for d, ps in combo)
+                if room_index >= len(available):
+                    continue
+                entries = pattern_placements(c, pattern, available[room_index])
                 result.append((cost, entries))
                 if len(result) >= self.config.max_candidates_per_course:
                     diag["truncated"] = True
@@ -362,9 +520,17 @@ def validate_changes(dataset, before, state, changed_ids, config):
     for cid in changed_ids:
         c, entries = dataset.courses[cid], state.placements[cid]
         domain, _ = time_options(c, config)
-        expected = week_load(before[cid]) if cid in before else {w: round(c.hours) for w in c.weeks}
+        expected = week_load(before[cid]) if cid in before else required_week_load(c)
         if week_load(entries) != expected:
             errors.append({"course_id": cid, "reason": "hours_or_weeks_changed"})
+        occupied = Counter((w, p.day, period) for p in entries for w in p.weeks for period in p.periods)
+        daily_blocks = Counter((w, p.day) for p in entries for w in p.weeks)
+        if any(count > 1 for count in occupied.values()):
+            errors.append({"course_id": cid, "reason": "overlapping_course_blocks"})
+        if any(count > config.max_blocks_per_day for count in daily_blocks.values()):
+            errors.append({"course_id": cid, "reason": "daily_block_limit"})
+        if any(load > config.max_weekly_hours for load in week_load(entries).values()):
+            errors.append({"course_id": cid, "reason": "weekly_hours_limit"})
         for p in entries:
             if not set(p.weeks) <= c.weeks or any((p.day, k) not in domain for k in p.periods):
                 errors.append({"course_id": cid, "reason": "forbidden_time_or_week"})
@@ -394,7 +560,7 @@ def repair(dataset, target_ids, config=None):
     baseline_conflicts = state.recorded_conflict_counts
     results, changed, moved = {}, set(), set()
     start = time.monotonic()
-    factory = CandidateFactory(dataset, config, start + config.time_limit_seconds)
+    factory = CandidateFactory(dataset, config, start + config.time_limit_seconds, occupancy=state)
     nodes = 0
     stopped = False
 
@@ -403,14 +569,24 @@ def repair(dataset, target_ids, config=None):
 
     def movable(cid):
         c = dataset.courses[cid]
+        try:
+            expected = required_week_load(c)
+        except ValueError:
+            return False
         return (cid in before and cid in config.movable_ids and cid not in config.locked_ids
                 and cid not in state.uncertain_ids
                 and (not c.special.strip() or cid in config.reviewed_soft_time_ids)
                 and not c.issues and cid not in moved
-                and week_load(before[cid]) == {w: round(c.hours) for w in c.weeks})
+                and week_load(before[cid]) == expected)
 
     def try_insert(cid):
         nonlocal nodes, stopped
+        if config.filter_fixed_occupancy:
+            # The sorting pass used the initial occupancy. Earlier successful
+            # insertions are now fixed too; regenerate against this monotonically
+            # growing state so they do not consume the retained-candidate cap.
+            # The factory keeps its original deadline for the entire batch.
+            factory.cache.pop(cid, None)
         candidates = factory.get(cid)
         # Try zero-disruption insertions before considering any neighborhood move.
         ranked = []
@@ -519,6 +695,7 @@ def repair(dataset, target_ids, config=None):
                         "relaxed_fields": sorted(relaxed),
                         "original_time_preference": c.prefer,
                         "original_special_requirement": c.special,
+                        "planned_weekly_loads": {str(w): h for w, h in required_week_load(c).items()},
                         "before": [placement_dict(p) for p in before.get(cid, [])],
                         "after": [placement_dict(p) for p in new_entries]})
     return {
