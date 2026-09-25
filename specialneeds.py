@@ -15,7 +15,7 @@ import openpyxl
 
 
 
-API_KEY = os.getenv("DASHSCOPE_API_KEY","sk-910f8ece9acf485eb00358b7a15d8dc2")
+API_KEY = os.getenv("DASHSCOPE_API_KEY", "").strip()
 BASE_URL = os.getenv("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
 MODEL = os.getenv("DASHSCOPE_MODEL", "qwen3.5-35b-a3b") #qwen-plus
 
