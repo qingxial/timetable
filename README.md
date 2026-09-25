@@ -153,3 +153,6 @@ python analysis_report.py
   或将 `DATA_DIR` 改为 `排课结果/`；`analysis_report.py` 直接读取 `排课结果/`，可正常使用。
 - 旧入口 `test_new.py`、临时脚本 `1.py`、运行日志 `log.txt`/`log2.txt` 已删除，
   如需找回可用 `git checkout a7c4aab -- <文件名>` 从 git 历史恢复。
+# 未排课程的诊断与参数化修复
+
+新增 `scripts/repair_courses.py`：无需 pickle，可从现有 Excel 诊断失败原因，按参数限制偏好调整和原课程移动数量，生成带校验及回滚保证的试排方案。用法和限制见 [参数化排课修复工具](docs/参数化排课修复工具.md)，真实数据核查见 [剩余课程诊断与补排实验](docs/剩余课程诊断与补排实验.md)。
