@@ -68,30 +68,22 @@ def _check_insertions(dataset, before, state, inserted, policy):
                 raise ValueError(f'Seed blocks do not match the declared weekly plan: {cid}/{week}')
 
 
-def extend_repair_proposal(dataset, seed, additional_target_ids, config, stages=None, total_time_limit_seconds=180):
-    """Preserve seed insertions; hash/correction replay is checked by the JSON boundary."""
-    policy = RepairConfig(**deepcopy(config)); policy.validate()
+def _validated_seed(dataset, seed, policy):
+    """Shared independent checks for scope extension and failed-target retry."""
     seed_policy = RepairConfig(**deepcopy(seed['config'])); seed_policy.validate()
     if policy.max_moved_courses or policy.movable_ids or seed['summary']['moved']:
-        raise ValueError('Proposal extension only supports no-move insertion proposals')
-    targets = list(additional_target_ids)
+        raise ValueError('Proposal continuation only supports no-move insertion proposals')
     seed_ids = [r['course_id'] for r in seed['results']]
     if len(seed_ids) != len(set(seed_ids)) or set(seed_ids) - dataset.courses.keys():
         raise ValueError('Seed result IDs must be unique known courses')
-    if not targets or len(targets) != len(set(targets)) or set(targets) & set(seed_ids):
-        raise ValueError('Additional targets must be nonempty, unique, and outside the seed target set')
-    if policy.target_ids and set(policy.target_ids) != set(targets):
-        raise ValueError('config.target_ids must be empty or exactly the additional target set')
-    if set(targets) - dataset.courses.keys():
-        raise ValueError('Unknown additional target IDs')
+    if seed['summary']['requested'] != len(seed_ids):
+        raise ValueError('Seed requested count does not match its results')
     original = Occupancy(dataset)
     before = dict(original.placements)
     if any(r['status'] == 'already_scheduled' and r['course_id'] not in before for r in seed['results']):
         raise ValueError('Seed already_scheduled result has no original assignment')
     seeded_data = replace(dataset, placements=_placements(seed.get('placements')))
     seeded = Occupancy(seeded_data)
-    if set(targets) & set(seeded.placements):
-        raise ValueError('Additional target already has baseline/seed assignments')
     changes = {}
     for change in seed['changes']:
         cid = change['course_id']
@@ -110,29 +102,94 @@ def extend_repair_proposal(dataset, seed, additional_target_ids, config, stages=
     _check_insertions(dataset, before, seeded, placed, seed_policy)
     # The new config must continue to permit all retained seed assignments.
     _check_insertions(dataset, before, seeded, placed, policy)
+    return seeded_data, seeded, before, changes, placed, seed_ids
+
+
+def _attempt_after_seed(dataset, validated, targets, policy, stages, total_time_limit_seconds):
+    seeded_data, seeded, before, changes, _, _ = validated
     args = asdict(policy); args['target_ids'] = targets
     extra = repair_with_fallbacks(seeded_data, targets, args, stages, total_time_limit_seconds)
     current = Occupancy(replace(dataset, placements=_placements(extra['placements'])))
     for cid, rows in seeded.placements.items():
         if Counter(current.placements.get(cid, [])) != Counter(rows):
-            raise RuntimeError(f'Extension changed a retained seed assignment: {cid}')
+            raise RuntimeError(f'Continuation changed a retained seed assignment: {cid}')
     for change in extra['changes']:
-        changes[change['course_id']] = change
+        cid = change['course_id']
+        if cid in changes or cid not in targets or change['operation'] != 'insert' or change.get('before') != []:
+            raise RuntimeError('Continuation returned an out-of-scope or duplicate change')
+        changes[cid] = deepcopy(change)
     _check_insertions(dataset, before, current, set(changes), policy)
     output = deepcopy(extra)
-    output['results'] = deepcopy(seed['results']) + extra['results']
     output['changes'] = [changes[cid] for cid in sorted(changes)]
     output['config'] = asdict(policy)
-    output['config']['target_ids'] = seed_ids + targets
-    output['summary'].update(requested=len(seed_ids)+len(targets), inserted=len(changes),
-        baseline_scheduled=len(before), proposed_scheduled=len(current.placements))
+    output['summary'].update(inserted=len(changes), baseline_scheduled=len(before),
+                             proposed_scheduled=len(current.placements))
     output['validation'].update(changed_courses_checked=len(changes), seed_successes_preserved=True,
-        original_placements_unchanged=True)
+                                 original_placements_unchanged=True)
+    return output, extra
+
+
+def extend_repair_proposal(dataset, seed, additional_target_ids, config, stages=None, total_time_limit_seconds=180):
+    """Preserve seed insertions; hash/correction replay is checked by the JSON boundary."""
+    policy = RepairConfig(**deepcopy(config)); policy.validate()
+    targets = list(additional_target_ids)
+    seed_ids = [r['course_id'] for r in seed['results']]
+    if not targets or len(targets) != len(set(targets)) or set(targets) & set(seed_ids):
+        raise ValueError('Additional targets must be nonempty, unique, and outside the seed target set')
+    if policy.target_ids and set(policy.target_ids) != set(targets):
+        raise ValueError('config.target_ids must be empty or exactly the additional target set')
+    if set(targets) - dataset.courses.keys():
+        raise ValueError('Unknown additional target IDs')
+    validated = _validated_seed(dataset, seed, policy)
+    if set(targets) & set(validated[1].placements):
+        raise ValueError('Additional target already has baseline/seed assignments')
+    output, extra = _attempt_after_seed(dataset, validated, targets, policy, stages, total_time_limit_seconds)
+    output['results'] = deepcopy(seed['results']) + extra['results']
+    output['config']['target_ids'] = seed_ids + targets
+    output['summary']['requested'] = len(seed_ids) + len(targets)
     output['scope_extension'] = {
         'original_target_ids': seed.get('scope_extension', {}).get('original_target_ids', seed_ids),
         'additional_target_ids': seed.get('scope_extension', {}).get('additional_target_ids', []) + targets,
-        'seed_inserted': len(placed), 'newly_inserted': extra['summary']['inserted'],
+        'seed_inserted': len(validated[4]), 'newly_inserted': extra['summary']['inserted'],
         'seed_source_hashes': deepcopy(seed['source_hashes']),
         'seed_summary': deepcopy(seed['summary']),
         'interpretation': 'Explicit scope promotion; previously skipped targets are no longer counted as silently skipped. Search time/nodes describe this extension only.'}
+    return output
+
+
+def retry_repair_proposal(dataset, seed, target_ids, config, stages=None, total_time_limit_seconds=180):
+    """Retry an explicit failed subset without changing target scope or seed successes.
+
+    The JSON boundary verifies original hashes and correction replay; this layer
+    independently validates every retained insertion and the merged placements.
+    """
+    policy = RepairConfig(**deepcopy(config)); policy.validate()
+    if (not isinstance(target_ids, (list, tuple)) or not target_ids
+            or any(not isinstance(cid, str) for cid in target_ids)
+            or len(target_ids) != len(set(target_ids))):
+        raise ValueError('Retry targets must be a nonempty unique list of course IDs')
+    targets = list(target_ids)
+    if policy.target_ids and set(policy.target_ids) != set(targets):
+        raise ValueError('config.target_ids must be empty or exactly the retry target set')
+    validated = _validated_seed(dataset, seed, policy)
+    _, seeded, _, _, placed, seed_ids = validated
+    seed_results = {row['course_id']: row for row in seed['results']}
+    if (set(targets) - set(seed_ids) or set(targets) & set(seeded.placements)
+            or any(seed_results[cid]['status'] in ('placed', 'already_scheduled') for cid in targets)):
+        raise ValueError('Retry targets must be failed seed results without baseline/seed assignments')
+    output, extra = _attempt_after_seed(dataset, validated, targets, policy, stages, total_time_limit_seconds)
+    updated = {row['course_id']: row for row in extra['results']}
+    if set(updated) != set(targets) or len(updated) != len(extra['results']):
+        raise RuntimeError('Retry returned missing or duplicate target results')
+    output['results'] = [deepcopy(updated.get(cid, seed_results[cid])) for cid in seed_ids]
+    output['config']['target_ids'] = seed_ids
+    output['summary']['requested'] = len(seed_ids)
+    if 'scope_extension' in seed:
+        output['scope_extension'] = deepcopy(seed['scope_extension'])
+    output['retry'] = {
+        'retry_targets': targets, 'attempted': len(targets),
+        'inserted_before': len(placed), 'newly_inserted': extra['summary']['inserted'],
+        'seed_summary': deepcopy(seed['summary']),
+        'seed_source_hashes': deepcopy(seed['source_hashes']),
+        'interpretation': 'Retries only explicit previously failed targets; results are replaced by course ID and the requested scope is unchanged. Search time/nodes describe this retry only.'}
     return output

@@ -45,6 +45,7 @@ class Course:
     issues: list[str] = field(default_factory=list)
     total_hours: float | None = None
     weekly_loads: dict[int, int] = field(default_factory=dict)
+    original_class_values: tuple[str, ...] = ()
 
 
 @dataclass
@@ -304,24 +305,26 @@ def _load_courses(rows: list[tuple[int, dict[str, Any]]], dataset: Dataset,
         for teacher, active in teacher_weeks.items():
             if not active:
                 issues.append(f"metadata: teacher {teacher!r} has no responsibility weeks within teaching weeks")
-        # Keep every known class for conservative baseline occupancy even when
-        # inconsistent metadata makes this course ineligible for new repair.
-        classes = {class_id for _, row in records for class_id in _codes(row.get("TJBJ"))}
-        generic = {c for c in classes if c.startswith(("全校", "全院", "全学院"))}
-        if generic:
-            classes.difference_update(generic)
-            issues.append(f"coverage: generic class scopes cannot identify student conflicts: {sorted(generic)!r}")
-        if not classes and not generic:
-            issues.append("coverage: missing class identifiers")
+        # Preserve source text even when strict checking excludes generic
+        # scopes from resource keys, so later audited overrides retain it.
+        original_class_values = tuple(sorted({_text(row.get("TJBJ")) for _, row in records}))
+        classes = {class_id for value in original_class_values for class_id in _codes(value)}
         check_class = _check_flag(first.get("IF_CLASS_CONFICT"), "IF_CLASS_CONFICT", issues)
-        # The registry, when supplied, is authoritative even for real class
-        # names without digits. Keep unknown tokens for baseline reservations.
-        unregistered = classes if class_registry is None else classes - class_registry
-        malformed = sorted(c for c in unregistered if not any(char.isdigit() for char in c) or c.startswith("周"))
-        if malformed:
-            issues.append(f"coverage: unresolved class identifiers: {malformed!r}")
-        if class_registry is not None and check_class and unregistered:
-            issues.append(f"coverage: class identifiers absent from BJMC registry: {sorted(unregistered)!r}")
+        if check_class:
+            generic = {c for c in classes if c.startswith(("全校", "全院", "全学院"))}
+            if generic:
+                classes.difference_update(generic)
+                issues.append(f"coverage: generic class scopes cannot identify student conflicts: {sorted(generic)!r}")
+            if not classes and not generic:
+                issues.append("coverage: missing class identifiers")
+            # The registry is authoritative even for real names without digits.
+            # Unknown tokens remain available for conservative baseline keys.
+            unregistered = classes if class_registry is None else classes - class_registry
+            malformed = sorted(c for c in unregistered if not any(char.isdigit() for char in c) or c.startswith("周"))
+            if malformed:
+                issues.append(f"coverage: unresolved class identifiers: {malformed!r}")
+            if class_registry is not None and unregistered:
+                issues.append(f"coverage: class identifiers absent from BJMC registry: {sorted(unregistered)!r}")
         for key in ("Prefer_Time", "unavailable_Time"):
             for value in {_text(row.get(key)) for _, row in records}:
                 try:
@@ -359,6 +362,7 @@ def _load_courses(rows: list[tuple[int, dict[str, Any]]], dataset: Dataset,
             check_room=_check_flag(first.get("IF_ROOM_CONFICT"), "IF_ROOM_CONFICT", issues),
             check_class=check_class,
             issues=issues, total_hours=total_hours,
+            original_class_values=original_class_values,
         )
         dataset.courses[identifier] = course
 

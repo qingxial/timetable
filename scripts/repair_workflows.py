@@ -104,6 +104,29 @@ def apply_data_corrections(dataset, corrections):
             result.courses[cid] = replace(c, capacity=float(new))
             audit.update(before={'capacity': c.capacity}, after={'capacity': new},
                          interpretation='Capacity demand corrected using explicitly confirmed enrollment; room capacities stay fixed.')
+        elif operation == 'set_class_conflict_check':
+            if scheduled:
+                raise ValueError('Class-check policy changes only support unscheduled courses')
+            if (type(item.get('expected_check_class')) is not bool
+                    or item.get('check_class') is not False):
+                raise ValueError('Supply a boolean expected_check_class and explicit check_class=false')
+            if c.check_class != item['expected_check_class']:
+                raise ValueError('Class-check policy precondition changed')
+            class_coverage_prefixes = (
+                'coverage: generic class scopes cannot identify student conflicts:',
+                'coverage: missing class identifiers',
+                'coverage: unresolved class identifiers:',
+                'coverage: class identifiers absent from BJMC registry:',
+            )
+            issues = [i for i in c.issues if not i.startswith(class_coverage_prefixes)]
+            result.courses[cid] = replace(c, check_class=False, issues=issues)
+            audit.update(
+                before={'check_class': c.check_class, 'classes': sorted(c.classes),
+                        'original_class_values': list(c.original_class_values), 'issues': c.issues},
+                after={'check_class': False, 'classes': sorted(c.classes),
+                       'original_class_values': list(c.original_class_values), 'issues': issues},
+                source_flag_equivalent={'IF_CLASS_CONFICT': 1},
+                interpretation='Explicit per-course policy exclusion, not a class-data correction: no class/student conflict checks or class occupancy reservations for this course. Teacher, room, time, capacity and hours checks retain their own policies; source files and class values stay unchanged.')
         elif operation == 'replace_classes':
             if scheduled:
                 raise ValueError('Class correction only supports unscheduled courses')

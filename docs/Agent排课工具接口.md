@@ -1,6 +1,6 @@
 # Agent 排课工具接口
 
-`scripts/timetable_agent_tools.py` 提供十个确定性工具及 JSON Schema，无需模型 SDK、网络请求或 pickle。Agent 根据已有授权选择参数、读取证据和解释结果；更正预检、候选搜索和校验由工具执行，输出是候选方案，不发布正式课表。
+`scripts/timetable_agent_tools.py` 提供十一个确定性工具及 JSON Schema，无需模型 SDK、网络请求或 pickle。Agent 根据已有授权选择参数、读取证据和解释结果；更正预检、候选搜索和校验由工具执行，输出是候选方案，不发布正式课表。
 
 下表的“四个输入”指 `course_path`、`room_path`、`schedule_path`、`failed_path`；这些工具均可另传 `class_path` 和显式 `corrections`。
 
@@ -16,6 +16,7 @@
 | `explain_conflict` | 四个输入、`config`、`explain_config` | 三值oracle和 QuickXplain；解释占用阻塞，不执行挪课 |
 | `plan_course_corrections` | 四个输入、`proposal_path` | 逐课给原字段、候选更正、所需证据和复验条件；可传 `source_workbook`、`skipped_path` 补充源行和跳过项 |
 | `extend_repair_proposal` | 四个输入、`seed_proposal_path`、`additional_target_ids`、`config` | 验证既有0移动方案，保留成功安排，再试排显式新增目标 |
+| `retry_repair_proposal` | 四个输入、`seed_proposal_path`、`target_ids`、`config` | 仅重试种子失败子集，保留全部既有成功安排及原目标集合；可传追加审计更正 |
 
 调用返回 `{ok, tool, result}` 或 `{ok: false, tool, error: {code, message, ...}}`。字段及类型以 `TOOL_SCHEMAS` 为准；未知字段、非有限数字、错误类型及不支持的调整会报错。凡传 `config`，必须显式给 `allowed_changes`；严格场景用空列表。
 
@@ -64,19 +65,20 @@ python scripts/timetable_agent_tools.py --request request.json --output diagnosi
 
 参数详见 [参数化排课修复工具](参数化排课修复工具.md)。`configs/repair-approved-college-times.json` 记录早期已审核108个教学班的工作日1–8节场景；配套 policy 是当时输入及授权的审计记录，不会自动授权晚间、周末或新课程。
 
-`days`、`periods` 决定搜索域；`time_scope: "configured_days"` 允许已授权时间偏好调整到所列全部日，`weekdays` 仍限工作日。`single_period_starts: "any"` 只补充单节的偶数起点。源禁排、固定周二5–8节禁排、容量、校区、必要类型、指定教室及资源冲突约束继续生效。对精确自由文本“仅周六周日排课”（去首尾空白后完全匹配），引擎按周末硬约束识别，不能用 `time_preference` 放宽到工作日；这不表示任意自由文本都能自动理解。
+`days`、`periods` 决定搜索域；`time_scope: "configured_days"` 允许已授权时间偏好调整到所列全部日，`weekdays` 仍限工作日。`single_period_starts: "any"` 只补充单节的偶数起点。源禁排、固定周二5–8节禁排、容量、校区、必要类型、指定教室及资源冲突约束继续生效；仅逐课显式授权的 `set_class_conflict_check` 可排除相应课程的班级/学生冲突检查，详见下文。对精确自由文本“仅周六周日排课”（去首尾空白后完全匹配），引擎按周末硬约束识别，不能用 `time_preference` 放宽到工作日；这不表示任意自由文本都能自动理解。
 
 `repair_with_fallbacks` 可传有序 `stages: ["daytime", "evening", "weekend"]` 和 `total_time_limit_seconds`。每阶段只取调用方日/节范围的交集，不自动扩大授权；要求 `max_moved_courses: 0` 且 `movable_ids` 为空。在共享总时间预算内保留先前成功安排。
 
 ## 有证据的数据更正
 
-用 `plan_course_corrections` 获取逐课建议，再将已授权且证据齐全的操作交给 `preview_data_corrections`。候选值、`needs_confirmation` 或缺证据项不能直接当作源数据事实。操作均需 `course_id`、`operation`、`evidence` 及原值前置条件：
+用 `plan_course_corrections` 获取逐课建议，再将已授权且证据齐全的操作交给 `preview_data_corrections`。候选值、`needs_confirmation` 或缺证据项不能直接当作源数据事实。六种操作均需 `course_id`、`operation`、`evidence` 及原值前置条件：
 
 | 操作 | 关键参数 | 条件与含义 |
 |---|---|---|
 | `redistribute_hours` | `expected_weekly_hours`、`expected_total_hours`、`authoritative_field: "LLXS"`；显式 `weekly_loads`，或 `strategy: "balanced_frontload"` 配 `allocation_unit` 1/2 | 保持源 LLXS 和每个原教学周；各周为正整数，总和等于 LLXS。均衡前置是候选教学计划，不是唯一可推导的真值 |
 | `set_capacity` | `expected_capacity`、`capacity`、`enrollment_frozen: true` | 实际人数有来源且已明确冻结；不修改教室容量，不能仅为塞入小教室降低需求 |
 | `replace_classes` | `expected_classes`、完整 `classes` | 有真实班级/选课映射，替换值全部存在于班级注册表；不猜测“全校”的成员 |
+| `set_class_conflict_check` | `expected_check_class`（布尔）、`check_class: false` | 用户逐课明确授权忽略班级/学生冲突时，核对原开关后关闭此项；已为false也支持保留审计的无变化操作，不修改原班级文本 |
 | `quarantine_incomplete_segments` | `expected_incomplete_count` | 其余完整记录已满足逐周负荷和全部 LLXS，才可隔离多余缺周/无效行；不删除整门课程、不补造周次 |
 | `set_one_off_week` | `expected_weekly_hours: 0`、`expected_total_hours`、`teaching_week`、`weeks_confirmed: true` | 零周学时、正整数 LLXS 且可由一个授课块完成；确认具体周后设置一次授课，所选周必须属于原源周集合（本批总量为2） |
 
@@ -109,6 +111,31 @@ python scripts/timetable_agent_tools.py --request request.json --output diagnosi
 
 16周学时按两节块需8块，若源要求仅周末，两个可授课日须允许每日4块；扩大每日块数不解除该周末硬约束。
 
+
+## 逐课忽略班级冲突与失败重试
+
+`set_class_conflict_check` 属于用户明确选择的验证范围调整，不是补齐学生名单。原表 `IF_CLASS_CONFICT=1/1.0` 表示免查，对应 `Course.check_class=false`；`0`、空值或缺省对应true，非法值不会被当作免查授权。不要根据容易误解的中文表头反转语义。
+
+本次已授权的20门中，16门原为检查true，4门体育课原为false。示例操作（需加入种子已有修正列表之后）：
+
+```json
+{
+  "course_id": "15HLT003.001",
+  "operation": "set_class_conflict_check",
+  "expected_check_class": true,
+  "check_class": false,
+  "evidence": "用户明确授权本教学班按无班级处理，排除其班级/学生冲突检查；教师、教室及其他约束保持。"
+}
+```
+
+原已免查的4门使用 `expected_check_class: false` 记录审计，无需虚构一次true→false变化。加载器在明确免查时不再因班级泛指、缺失、畸形或未注册而阻塞；`classes` 和 `original_class_values` 保留可用集合及源文本，不擦除数据。默认检查时仍严查覆盖，教师责任周、课时、时间约束和其他元数据诊断继续生效。
+
+对既有方案的失败课程使用 `retry_repair_proposal`，不要回到旧基线重算后误称保留成功。顶层 `target_ids` 必须非空、唯一且是种子失败结果的子集，不能包含种子成功、原已排或新增范围外课程；`config.target_ids` 为空或与它完全一致。要求0移动且空 `movable_ids`，四个原输入路径保持不变。
+
+与扩域接口一样，工具重放种子修正前缀并核对哈希，独立验证种子成功；追加修正只作用于本次重试目标。输出按ID替换被重试结果，未重试失败和全部旧成功保留，`summary.requested`不扩大。`retry` 单列目标、本次新增、种子成功数和解释；时间/节点只计本次重试。本次应以176门成功的候选作种子，保留其全部安排后重试20门，不能提前宣称这20门已排成功。
+
+响应的 `class_conflict_policy.explicit_exclusions` 列出显式授权ID，方案 `validation.class_conflict_checks_disabled_for_changed_course_ids` 列出实际改动中免查的课程，`class_conflict_scope` 说明验证范围。报告须区分授权对象与真正补入的对象，并列出ID和数量。即使 `new_conflicts=0`，结论也只覆盖仍开启的检查项，不能声称这些课没有学生冲突。教师、教室、人数需求、必要类型、校区、禁排和课时不能随之忽略。忽略班级与调整人数是不同授权；本次不会自动采用原表实际人数或解除容量条件。
+
 ## 联合优化、质量比较与解释
 
 `optimizer_config` 必须提供完整非负 `quality_weights`：`time_preference`、`evening`、`weekend`；可另设 `time_limit_seconds`、`max_search_nodes`、`candidate_limit_per_course`。局部优化联合搜索完整课程模式，报告两阶段状态、保留域、截断、界限及质量分项。质量包含不同日/节模式的偏好代价，以及按教学周计数的晚间/周末授课节次。
@@ -131,7 +158,9 @@ python scripts/timetable_agent_tools.py --request request.json --output diagnosi
 
 另340个原跳过ID包括274个 `SFXYPK=0`、57个高周学时、9个零周学时。274个先确认是否属于排课任务，不直接计为失败；9个源 LLXS 为2，待确认具体授课周。39+340的379份逐课行动计划是扩域前的问题及业务范围快照，不是379门已确认待排。
 
-当前扩域候选的219个试排目标合计补入176门、剩43门（23门静态教室、20门班级映射），组成是原162的123/39加新增57的53/4。原123门安排保持不变，全部176门新增课的课时与已知资源复验通过，原课程移动0门；20项更正只在内存生效。4680是有安排记录的教学班ID数，不能称全校4680门历史课时都已校验。9门待确认授课周和274门业务范围项仍单列，未借此次扩域自动排入。
+2026-09-25已核验、尚未应用本次班级免查授权的扩域候选，其219个试排目标合计补入176门、剩43门（23门静态教室、20门班级映射），组成是原162的123/39加新增57的53/4。原123门安排保持不变，全部176门新增课的课时与已知资源复验通过，原课程移动0门；20项更正只在内存生效。4680是有安排记录的教学班ID数，不能称全校4680门历史课时都已校验。9门待确认授课周和274门业务范围项仍单列，未借此次扩域自动排入。
+
+上述176/43保留为班级免查前的历史统计。2026-09-26已保留176门再新增8门，最新184/35及4门高水平队场地待校核问题见 [本轮逐课报告](20门班级免查与剩余35门.md)。更正后的验证范围与原方案不同，不能把免查后的成功数当成相同约束下的算法改进。
 
 `compare_proposals` 拒绝不同有效源哈希或目标集合；同源时也披露参数差异，不把更改约束后的成功数当作纯算法收益。旧日间89/73、晚间96/66是历史对照。
 

@@ -78,8 +78,8 @@ class ToolContractTests(unittest.TestCase):
                          {"diagnose_remaining", "propose_repair", "compare_proposals",
                           "repair_with_fallbacks", "preview_data_corrections", "optimize_local_repair",
                           "quality_frontier", "explain_conflict", "plan_course_corrections",
-                          "extend_repair_proposal"})
-        self.assertEqual(len(TOOL_SCHEMAS), 10)
+                          "extend_repair_proposal", "retry_repair_proposal"})
+        self.assertEqual(len(TOOL_SCHEMAS), 11)
         for schema in TOOL_SCHEMAS:
             with self.subTest(name=schema["name"]):
                 self.assertFalse(schema["parameters"]["additionalProperties"])

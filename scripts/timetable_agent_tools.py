@@ -83,6 +83,10 @@ CORRECTIONS_SCHEMA = {"type": "array", "items": {"oneOf": [
         ["expected_capacity", "capacity", "enrollment_frozen"]),
     _correction_schema("replace_classes", {"expected_classes": _IDS, "classes": {**_IDS, "minItems": 1}},
         ["expected_classes", "classes"]),
+    _correction_schema("set_class_conflict_check", {
+        "expected_check_class": {"type": "boolean"},
+        "check_class": {"type": "boolean", "enum": [False]},
+    }, ["expected_check_class", "check_class"]),
     _correction_schema("set_one_off_week", {
         "expected_weekly_hours": {"type": "number", "enum": [0]},
         "expected_total_hours": {"type": "integer", "minimum": 1, "maximum": 11},
@@ -130,6 +134,12 @@ for _name, _description, _extras, _required in [
       "stages": {"type": "array", "items": {"type": "string", "enum": ["daytime", "evening", "weekend"]}, "uniqueItems": True, "minItems": 1},
       "total_time_limit_seconds": {"type": "number", "exclusiveMinimum": 0}},
      ["seed_proposal_path", "additional_target_ids", "config"]),
+    ("retry_repair_proposal", "Retry an explicit failed subset of a saved proposal after audited corrections or policy exclusions; independently validate and retain every successful placement without expanding target scope. Preserve the exact seed correction prefix and restrict appended corrections to retry targets.",
+     {"seed_proposal_path": _PATH, "target_ids": {**_IDS, "minItems": 1},
+      "config": CONFIG_SCHEMA,
+      "stages": {"type": "array", "items": {"type": "string", "enum": ["daytime", "evening", "weekend"]}, "uniqueItems": True, "minItems": 1},
+      "total_time_limit_seconds": {"type": "number", "exclusiveMinimum": 0}},
+     ["seed_proposal_path", "target_ids", "config"]),
 ]:
     TOOL_SCHEMAS.append({"type": "function", "name": _name, "description": _description,
                          "parameters": _object({**_SOURCE_PROPERTIES, **_extras}, [*_SOURCE_REQUIRED, *_required])})
@@ -258,7 +268,7 @@ def _read_failed(path):
 def _proposal(path):
     proposal = _read_json(path)
     # CLI responses can be consumed directly, as can legacy proposal.json files.
-    if isinstance(proposal, dict) and proposal.get("ok") is True and proposal.get("tool") in {"propose_repair", "repair_with_fallbacks", "optimize_local_repair", "extend_repair_proposal"}:
+    if isinstance(proposal, dict) and proposal.get("ok") is True and proposal.get("tool") in {"propose_repair", "repair_with_fallbacks", "optimize_local_repair", "extend_repair_proposal", "retry_repair_proposal"}:
         envelope_result = proposal.get("result")
         proposal = envelope_result.get("proposal") if isinstance(envelope_result, dict) else None
     if (not isinstance(proposal, dict) or proposal.get("mode") != "proposal"
@@ -329,13 +339,13 @@ def _run_repair_tool(name, arguments):
         from .repair_optimizer import optimize_local, quality_frontier
         from .repair_explanations import explain_conflict
         from .repair_action_plans import build_action_plans, load_action_plan_supplemental
-        from .repair_extensions import extend_repair_proposal
+        from .repair_extensions import extend_repair_proposal, retry_repair_proposal
     except ImportError:
         from repair_workflows import apply_data_corrections, repair_with_fallbacks
         from repair_optimizer import optimize_local, quality_frontier
         from repair_explanations import explain_conflict
         from repair_action_plans import build_action_plans, load_action_plan_supplemental
-        from repair_extensions import extend_repair_proposal
+        from repair_extensions import extend_repair_proposal, retry_repair_proposal
     paths = {key: Path(arguments[f"{key[:-1] if key in ('courses', 'rooms') else key}_path"])
              for key in ("courses", "rooms", "schedule", "failed")}
     class_path = Path(arguments["class_path"]) if "class_path" in arguments else paths["courses"].parent / "班级表.xlsx"
@@ -349,25 +359,27 @@ def _run_repair_tool(name, arguments):
     targets = _read_failed(paths["failed"])
     data.source_hashes["failed"] = before["failed"]
     seed = None
-    if name == "extend_repair_proposal":
+    continuation = name in {"extend_repair_proposal", "retry_repair_proposal"}
+    if continuation:
         seed = _proposal(arguments["seed_proposal_path"])
         _metrics(seed)
         seed_corrections = seed.get("correction_parameters", [])
         supplied = arguments.get("corrections", [])
         if supplied[:len(seed_corrections)] != seed_corrections:
             raise ToolError("invalid_arguments", "Seed correction parameters must be an exact prefix of the supplied corrections")
-        extra_ids = set(arguments["additional_target_ids"])
+        extra_ids = set(arguments["additional_target_ids" if name == "extend_repair_proposal" else "target_ids"])
         if any(item['course_id'] not in extra_ids for item in supplied[len(seed_corrections):]):
-            raise ToolError("invalid_arguments", "Additional corrections may only affect additional targets")
+            raise ToolError("invalid_arguments", "Additional corrections may only affect continuation targets")
         seed_data, _ = apply_data_corrections(data, seed_corrections)
         if seed_data.source_hashes != seed["source_hashes"]:
             raise ToolError("incomparable_proposals", "Seed source/correction hashes do not match the replayed dataset")
     data, audit = apply_data_corrections(data, arguments.get("corrections", []))
     config = deepcopy(arguments.get("config", {"allowed_changes": []}))
     policy = RepairConfig(**config); policy.validate()
-    outside = set(policy.target_ids) - set(arguments["additional_target_ids"] if name == "extend_repair_proposal" else targets)
+    allowed_targets = extra_ids if continuation else set(targets)
+    outside = set(policy.target_ids) - allowed_targets
     if outside:
-        raise ToolError("invalid_arguments", "config.target_ids contains IDs outside the supplied failed-course workbook", sorted(outside))
+        raise ToolError("invalid_arguments", "config.target_ids contains IDs outside the supplied target scope", sorted(outside))
     if name == "preview_data_corrections":
         output = {"audit": audit, "effective_source_hashes": data.source_hashes,
                   "mode": "correction_preview", "source_files_unchanged": True}
@@ -383,7 +395,10 @@ def _run_repair_tool(name, arguments):
         supplemental = load_action_plan_supplemental(arguments.get("source_workbook"), paths["courses"], arguments.get("skipped_path"), paths["schedule"])
         output = build_action_plans(data, proposal, supplemental)
     else:
-        if name == "extend_repair_proposal":
+        if name == "retry_repair_proposal":
+            proposal = retry_repair_proposal(data, seed, arguments["target_ids"], config,
+                arguments.get("stages"), arguments.get("total_time_limit_seconds", 180))
+        elif name == "extend_repair_proposal":
             proposal = extend_repair_proposal(data, seed, arguments["additional_target_ids"], config,
                 arguments.get("stages"), arguments.get("total_time_limit_seconds", 180))
         elif name == "repair_with_fallbacks":
@@ -394,6 +409,17 @@ def _run_repair_tool(name, arguments):
             proposal = repair(data, targets, config)
         proposal["input_corrections"] = audit
         proposal["correction_parameters"] = deepcopy(arguments.get("corrections", []))
+        for row in proposal["results"] + proposal["changes"]:
+            course = data.courses.get(row["course_id"])
+            row["class_conflict_check"] = course.check_class if course is not None else None
+        disabled_targets = sorted(row['course_id'] for row in proposal['results']
+                                  if row['class_conflict_check'] is False)
+        disabled_changes = sorted(row['course_id'] for row in proposal['changes']
+                                  if row['class_conflict_check'] is False)
+        proposal.setdefault('validation', {}).update(
+            class_conflict_checks_disabled_for_target_ids=disabled_targets,
+            class_conflict_checks_disabled_for_changed_course_ids=disabled_changes,
+            class_conflict_scope='Class/student checks and class occupancy reservations are excluded for courses with check_class=false. No student-conflict-free claim is made for those courses. Other checks follow the recorded source flags and caller policy.')
         output = {"proposal": proposal, "policy": proposal["config"],
                   "source_files_unchanged": True, "mode": "dry_run_proposal",
                   "authorization_basis": "Only explicit caller parameters are executed; audit records retain original values and planning assumptions."}
@@ -402,6 +428,13 @@ def _run_repair_tool(name, arguments):
         raise ToolError("input_changed", "Source files changed during the run; result rejected")
     output["source_files_unchanged"] = True
     output["input_corrections"] = audit
+    output["class_conflict_policy"] = {
+        "explicit_exclusions": [item['course_id'] for item in arguments.get('corrections', [])
+                                if item['operation'] == 'set_class_conflict_check'],
+        "source_flag_semantics": "IF_CLASS_CONFICT=1 means ignore; internal check_class=false means ignore.",
+        "interpretation": "Ignoring class conflicts does not mean that a course has no students or that student conflicts are resolved."}
+    if 'proposal' in output:
+        output['proposal']['class_conflict_policy'] = deepcopy(output['class_conflict_policy'])
     return output
 
 
