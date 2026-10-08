@@ -28,6 +28,10 @@ def apply_data_corrections(dataset, corrections):
             raise ValueError(f'Unknown correction course: {cid}')
         if (cid, operation) in seen:
             raise ValueError(f'Duplicate correction: {cid}/{operation}')
+        if (operation in {'set_capacity', 'set_capacity_assumption'}
+                and any((cid, other) in seen for other in
+                        {'set_capacity', 'set_capacity_assumption'} - {operation})):
+            raise ValueError('Confirmed capacity and capacity assumptions cannot be mixed for the same course')
         seen.add((cid, operation))
         if not isinstance(item.get('evidence'), str) or not item['evidence'].strip():
             raise ValueError('Every correction requires an explicit evidence/decision basis')
@@ -104,6 +108,25 @@ def apply_data_corrections(dataset, corrections):
             result.courses[cid] = replace(c, capacity=float(new))
             audit.update(before={'capacity': c.capacity}, after={'capacity': new},
                          interpretation='Capacity demand corrected using explicitly confirmed enrollment; room capacities stay fixed.')
+        elif operation == 'set_capacity_assumption':
+            if scheduled:
+                raise ValueError('Capacity assumptions only support unscheduled courses')
+            if item.get('assumption_only') is not True:
+                raise ValueError('Capacity scenarios require explicit assumption_only=true')
+            new = item['capacity']
+            if type(new) not in (int, float) or not math.isfinite(new) or new <= 0:
+                raise ValueError('Capacity must be positive and finite')
+            expected = item['expected_capacity']
+            if (type(expected) not in (int, float) or not math.isfinite(expected)
+                    or expected < 0 or c.capacity != expected):
+                raise ValueError('Capacity assumption precondition changed')
+            result.courses[cid] = replace(c, capacity=float(new))
+            audit.update(before={'capacity': c.capacity}, after={'capacity': new},
+                         basis='unverified_capacity_scenario',
+                         requires_enrollment_confirmation=True,
+                         interpretation='Hypothetical capacity demand for an explicitly requested scenario only; '
+                                        'enrollment is not confirmed frozen and this is not a correction of source facts. '
+                                        'Confirm enrollment before adopting the result; room capacities stay fixed.')
         elif operation == 'set_class_conflict_check':
             if scheduled:
                 raise ValueError('Class-check policy changes only support unscheduled courses')

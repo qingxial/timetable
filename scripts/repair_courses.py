@@ -169,7 +169,8 @@ def room_rejections(course, room, changes):
         reasons.append("campus")
     if not math.isfinite(room.capacity) or room.capacity < course.capacity:
         reasons.append("capacity")
-    if course.room_type and room.type != course.room_type:
+    allowed_room_types = course.allowed_room_types or frozenset({course.room_type})
+    if course.room_type and room.type not in allowed_room_types:
         reasons.append("room_type")
     if course.explicit_rooms and room.id not in course.explicit_rooms:
         reasons.append("explicit_room")

@@ -32,6 +32,9 @@ class Course:
     campus: str = ""
     capacity: float = 0.0
     room_type: str = ""
+    # The source-declared type remains ``room_type``.  A reviewed rule pack
+    # may add same-campus substitute types for this exact course only.
+    allowed_room_types: frozenset[str] = frozenset()
     buildings: frozenset[str] = frozenset()
     explicit_rooms: frozenset[str] = frozenset()
     historical_rooms: frozenset[str] = frozenset()

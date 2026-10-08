@@ -2,7 +2,7 @@
 
 `scripts/timetable_agent_tools.py` 提供十一个确定性工具及 JSON Schema，无需模型 SDK、网络请求或 pickle。Agent 根据已有授权选择参数、读取证据和解释结果；更正预检、候选搜索和校验由工具执行，输出是候选方案，不发布正式课表。
 
-下表的“四个输入”指 `course_path`、`room_path`、`schedule_path`、`failed_path`；这些工具均可另传 `class_path` 和显式 `corrections`。
+下表的“四个输入”指 `course_path`、`room_path`、`schedule_path`、`failed_path`；这些工具均可另传 `class_path`、显式 `corrections`，以及经教务确认的 `rule_pack_path`。
 
 | 工具 | 必要输入 | 作用与限制 |
 |---|---|---|
@@ -61,6 +61,12 @@ python scripts/timetable_agent_tools.py --request request.json --output diagnosi
 
 输出独占创建，不覆盖已有文件。方案读取同时接受底层 `proposal.json` 和包装工具的方案响应。Python `dispatch_tool` 只返回结果；读取源文件的工具在运行前后检查哈希。保存请求、响应、源哈希、修正审计和验证，才能复现同一场景。
 
+## 教务规则包
+
+`rule_pack_path` 是可插拔的、版本化 JSON 输入。当前支持 `room_type_substitution`：教务为**精确教学班 ID**确认可替代的教室类型，并附上可追溯依据。工具会将规则包哈希写入 `source_hashes.rule_pack`，将已执行规则写入输出 `rule_pack`；续排和方案比较必须使用相同规则包。
+
+规则包只能增加同校区的可接受教室类型，不能改变课程校区。容量、指定教室、教师/班级冲突、时间禁排、课时和占用照常生效，跨校区安排永远不会成为候选。完整格式见 [教务规则包 skill](../.agents/skills/timetable-rule-pack/SKILL.md) 及其 [schema](../.agents/skills/timetable-rule-pack/references/rule-pack-schema.md)。
+
 ## 授权范围与分阶段补排
 
 参数详见 [参数化排课修复工具](参数化排课修复工具.md)。`configs/repair-approved-college-times.json` 记录早期已审核108个教学班的工作日1–8节场景；配套 policy 是当时输入及授权的审计记录，不会自动授权晚间、周末或新课程。
@@ -69,14 +75,15 @@ python scripts/timetable_agent_tools.py --request request.json --output diagnosi
 
 `repair_with_fallbacks` 可传有序 `stages: ["daytime", "evening", "weekend"]` 和 `total_time_limit_seconds`。每阶段只取调用方日/节范围的交集，不自动扩大授权；要求 `max_moved_courses: 0` 且 `movable_ids` 为空。在共享总时间预算内保留先前成功安排。
 
-## 有证据的数据更正
+## 审计更正与显式假设
 
-用 `plan_course_corrections` 获取逐课建议，再将已授权且证据齐全的操作交给 `preview_data_corrections`。候选值、`needs_confirmation` 或缺证据项不能直接当作源数据事实。六种操作均需 `course_id`、`operation`、`evidence` 及原值前置条件：
+用 `plan_course_corrections` 获取逐课建议，再将已授权的操作交给 `preview_data_corrections`。事实性更正须有对应事实证据；明确授权的容量假设可在人数尚未冻结时试排，但必须标记为假设。候选值、`needs_confirmation` 或缺证据项不能直接当作源数据事实。七种操作均需 `course_id`、`operation`、`evidence` 及原值前置条件：
 
 | 操作 | 关键参数 | 条件与含义 |
 |---|---|---|
 | `redistribute_hours` | `expected_weekly_hours`、`expected_total_hours`、`authoritative_field: "LLXS"`；显式 `weekly_loads`，或 `strategy: "balanced_frontload"` 配 `allocation_unit` 1/2 | 保持源 LLXS 和每个原教学周；各周为正整数，总和等于 LLXS。均衡前置是候选教学计划，不是唯一可推导的真值 |
 | `set_capacity` | `expected_capacity`、`capacity`、`enrollment_frozen: true` | 实际人数有来源且已明确冻结；不修改教室容量，不能仅为塞入小教室降低需求 |
+| `set_capacity_assumption` | `expected_capacity`、正数 `capacity`、`assumption_only: true` | 仅未排课；用户明确授权按该人数做假设试排，核对原需求后仅在内存改变需求；不声明人数已冻结，不改真实教室容量 |
 | `replace_classes` | `expected_classes`、完整 `classes` | 有真实班级/选课映射，替换值全部存在于班级注册表；不猜测“全校”的成员 |
 | `set_class_conflict_check` | `expected_check_class`（布尔）、`check_class: false` | 用户逐课明确授权忽略班级/学生冲突时，核对原开关后关闭此项；已为false也支持保留审计的无变化操作，不修改原班级文本 |
 | `quarantine_incomplete_segments` | `expected_incomplete_count` | 其余完整记录已满足逐周负荷和全部 LLXS，才可隔离多余缺周/无效行；不删除整门课程、不补造周次 |
@@ -85,6 +92,27 @@ python scripts/timetable_agent_tools.py --request request.json --output diagnosi
 `set_one_off_week` 是明确确认后的周域缩小，区别于保持所有原教学周的 `redistribute_hours`。当前真实9门零周学时课尚未选择具体周，不能自动执行。
 
 更正只影响本次内存数据，有效 `source_hashes` 增加 `corrections` 摘要，源 Excel 保持原样。试排、比较、逐课计划和续排必须重放相同修正；只比较工作簿哈希不足以证明有效数据相同。审计保存原值、新值、证据与计划假设；工具不能替调用方证明证据文本或冻结声明的真实性。
+
+### 未确认人数的条件试排
+
+`set_capacity_assumption` 适用于用户明确说“按这些人数试一下”但尚未确认选课冻结的情形。不能为试排把 `enrollment_frozen` 伪填为true。`assumption_only` 必须是JSON布尔true，不能用数字1或字符串；同课不能与 `set_capacity` 混用，同课同操作也不能重复。以下是合成参数例子，只展示字段，不代表对真实课程的授权：
+
+```json
+[
+  {
+    "operation": "set_capacity_assumption",
+    "course_id": "SYNTHETIC_COURSE",
+    "evidence": "用户明确要求按40人做假设试排；人数未确认冻结",
+    "expected_capacity": 80,
+    "capacity": 40,
+    "assumption_only": true
+  }
+]
+```
+
+把该数组作为 `corrections`（有种子时先保留其完整修正前缀），依次预检和试排。审计增加 `basis: "unverified_capacity_scenario"`、`requires_enrollment_confirmation: true`，并保存原容量和假设容量。包装工具从**完整 `corrections`**重建 `planning_assumptions`，包括 `conditional_only`、`requires_enrollment_confirmation`、`capacity_course_ids` 及每课 `capacity_assumptions`；方案响应同时在 `result` 和 `result.proposal` 保存该范围。续排继承的假设仍在完整前缀中，不因本轮没有新增容量操作而消失。
+
+假设成功只能说明“在这些人数成立时存在所列技术候选”，不表示已确认选课、现实可发布或容量事实已被更正。即使 `conditional_only` 为false，也不单独证明其他业务条件齐全。以后得到冻结确认，需要建立并验证新的有效数据/审计版本；不能删掉种子前缀、去掉条件标记或在同课追加 `set_capacity` 来把旧假设伪装成已核实事实。
 
 虚班不能机械地以继承的母课 LLXS 逐个补足；两个课时更正操作会拒绝单独修改带 `@` 的虚班，需另行提供母课联合分段计划。现有52个虚班对应26门母课，其中50个有正 LLXS 的虚班均继承整门母课值；应按各分段周次和负荷汇总到母课后核对总量。
 

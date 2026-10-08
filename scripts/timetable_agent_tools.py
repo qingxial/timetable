@@ -22,9 +22,11 @@ from openpyxl import load_workbook
 try:
     from .repair_courses import RepairConfig, preference_cost, repair
     from .repair_data import load_dataset, parse_time_windows
+    from .repair_rule_packs import RulePackError, apply_rule_pack, load_rule_pack
 except ImportError:
     from repair_courses import RepairConfig, preference_cost, repair
     from repair_data import load_dataset, parse_time_windows
+    from repair_rule_packs import RulePackError, apply_rule_pack, load_rule_pack
 
 
 def _object(properties, required):
@@ -58,7 +60,7 @@ TOOL_SCHEMAS = [
     {"type": "function", "name": "propose_repair",
      "description": "Dry-run the existing bounded repair engine on explicit Excel sources and an explicit adjustment whitelist. Return a proposal without writing source files or authorizing publication.",
      "parameters": _object({"course_path": _PATH, "room_path": _PATH, "schedule_path": _PATH,
-                            "failed_path": _PATH, "class_path": _PATH, "config": CONFIG_SCHEMA},
+                            "failed_path": _PATH, "class_path": _PATH, "rule_pack_path": _PATH, "config": CONFIG_SCHEMA},
                            ["course_path", "room_path", "schedule_path", "failed_path", "config"])},
     {"type": "function", "name": "compare_proposals",
      "description": "Compare proposals only when baseline source hashes and target sets match; disclose policy and search-budget differences rather than treating changed constraints as an algorithm comparison.",
@@ -81,6 +83,10 @@ CORRECTIONS_SCHEMA = {"type": "array", "items": {"oneOf": [
     _correction_schema("set_capacity", {"expected_capacity": _NONNEGATIVE,
         "capacity": {"type": "number", "exclusiveMinimum": 0}, "enrollment_frozen": {"type": "boolean", "enum": [True]}},
         ["expected_capacity", "capacity", "enrollment_frozen"]),
+    _correction_schema("set_capacity_assumption", {"expected_capacity": _NONNEGATIVE,
+        "capacity": {"type": "number", "exclusiveMinimum": 0},
+        "assumption_only": {"type": "boolean", "enum": [True]}},
+        ["expected_capacity", "capacity", "assumption_only"]),
     _correction_schema("replace_classes", {"expected_classes": _IDS, "classes": {**_IDS, "minItems": 1}},
         ["expected_classes", "classes"]),
     _correction_schema("set_class_conflict_check", {
@@ -97,7 +103,8 @@ CORRECTIONS_SCHEMA = {"type": "array", "items": {"oneOf": [
         ["expected_incomplete_count"]),
 ]}}
 _SOURCE_PROPERTIES = {"course_path": _PATH, "room_path": _PATH, "schedule_path": _PATH,
-                      "failed_path": _PATH, "class_path": _PATH, "corrections": CORRECTIONS_SCHEMA}
+                      "failed_path": _PATH, "class_path": _PATH, "rule_pack_path": _PATH,
+                      "corrections": CORRECTIONS_SCHEMA}
 _SOURCE_REQUIRED = ["course_path", "room_path", "schedule_path", "failed_path"]
 OPTIMIZER_SCHEMA = _object({
     "quality_weights": _object({key: _NONNEGATIVE for key in ("time_preference", "evening", "weekend")},
@@ -326,11 +333,27 @@ def _diagnose(arguments):
             "remaining_count": sum(r["status"] not in ("placed", "already_scheduled") for r in rows),
             "courses": rows, "validation": proposal.get("validation", {}),
             "data_issues": proposal.get("data_issues", []),
+            "rule_pack": proposal.get("rule_pack"),
+            "planning_assumptions": _planning_assumptions(proposal.get("correction_parameters", [])),
             "interpretation": "Statuses are evidence from a bounded heuristic and its input model; no UNSAT certificate or global infeasibility proof is provided."}
 
 
 def _propose(arguments):
     return _run_repair_tool("propose_repair", arguments)
+
+
+def _planning_assumptions(corrections):
+    """Rebuild conditional scope from all actions, including inherited seed actions."""
+    capacities = [{key: item[key] for key in ('course_id', 'expected_capacity', 'capacity', 'evidence')}
+                  for item in corrections if item['operation'] == 'set_capacity_assumption']
+    return {
+        'conditional_only': bool(capacities),
+        'capacity_course_ids': sorted(item['course_id'] for item in capacities),
+        'capacity_assumptions': deepcopy(capacities),
+        'requires_enrollment_confirmation': bool(capacities),
+        'interpretation': 'Capacity assumptions are hypothetical planning inputs, not verified frozen enrollment. Their descendants remain conditional; source workbook and room capacities are unchanged. No official scheduling or publication readiness is established by this scenario.' if capacities else
+                          'No explicit unverified capacity assumptions are recorded; this alone does not establish business or publication readiness.',
+    }
 
 
 def _run_repair_tool(name, arguments):
@@ -354,10 +377,19 @@ def _run_repair_tool(name, arguments):
     for key in ("source_workbook", "skipped_path"):
         if key in arguments:
             paths[key] = Path(arguments[key])
+    if "rule_pack_path" in arguments:
+        paths["rule_pack"] = Path(arguments["rule_pack_path"])
     before = {key: _hash(path) for key, path in paths.items()}
     data = load_dataset(paths["courses"], paths["rooms"], paths["schedule"], paths.get("classes"))
     targets = _read_failed(paths["failed"])
     data.source_hashes["failed"] = before["failed"]
+    rule_pack_summary = None
+    if "rule_pack" in paths:
+        try:
+            data, rule_pack_summary = apply_rule_pack(data, load_rule_pack(paths["rule_pack"]))
+        except RulePackError as exc:
+            raise ToolError("input_error", str(exc)) from exc
+        data.source_hashes["rule_pack"] = before["rule_pack"]
     seed = None
     continuation = name in {"extend_repair_proposal", "retry_repair_proposal"}
     if continuation:
@@ -389,7 +421,7 @@ def _run_repair_tool(name, arguments):
         output = explain_conflict(data, policy.target_ids or targets, config, arguments["explain_config"])
     elif name == "plan_course_corrections":
         proposal = _proposal(arguments["proposal_path"])
-        for key in ("courses", "rooms", "schedule", "classes", "corrections"):
+        for key in ("courses", "rooms", "schedule", "classes", "corrections", "rule_pack"):
             if proposal["source_hashes"].get(key) != data.source_hashes.get(key):
                 raise ToolError("incomparable_proposals", "Action plan input differs from the proposal's effective dataset", key)
         supplemental = load_action_plan_supplemental(arguments.get("source_workbook"), paths["courses"], arguments.get("skipped_path"), paths["schedule"])
@@ -409,6 +441,7 @@ def _run_repair_tool(name, arguments):
             proposal = repair(data, targets, config)
         proposal["input_corrections"] = audit
         proposal["correction_parameters"] = deepcopy(arguments.get("corrections", []))
+        proposal["rule_pack"] = deepcopy(rule_pack_summary)
         for row in proposal["results"] + proposal["changes"]:
             course = data.courses.get(row["course_id"])
             row["class_conflict_check"] = course.check_class if course is not None else None
@@ -424,10 +457,12 @@ def _run_repair_tool(name, arguments):
                   "source_files_unchanged": True, "mode": "dry_run_proposal",
                   "authorization_basis": "Only explicit caller parameters are executed; audit records retain original values and planning assumptions."}
     after = {key: _hash(path) for key, path in paths.items()}
-    if before != after or any(data.source_hashes.get(key) != before[key] for key in ("courses", "rooms", "schedule", "failed")):
+    if before != after or any(data.source_hashes.get(key) != before[key] for key in ("courses", "rooms", "schedule", "failed", "rule_pack") if key in before):
         raise ToolError("input_changed", "Source files changed during the run; result rejected")
     output["source_files_unchanged"] = True
     output["input_corrections"] = audit
+    output["planning_assumptions"] = _planning_assumptions(arguments.get('corrections', []))
+    output["rule_pack"] = deepcopy(rule_pack_summary)
     output["class_conflict_policy"] = {
         "explicit_exclusions": [item['course_id'] for item in arguments.get('corrections', [])
                                 if item['operation'] == 'set_class_conflict_check'],
@@ -435,6 +470,8 @@ def _run_repair_tool(name, arguments):
         "interpretation": "Ignoring class conflicts does not mean that a course has no students or that student conflicts are resolved."}
     if 'proposal' in output:
         output['proposal']['class_conflict_policy'] = deepcopy(output['class_conflict_policy'])
+        output['proposal']['planning_assumptions'] = deepcopy(output['planning_assumptions'])
+        output['proposal']['rule_pack'] = deepcopy(rule_pack_summary)
     return output
 
 
@@ -478,13 +515,13 @@ def _compare(arguments):
     # A failed-list path may differ between exports. The target-set equality
     # check below protects that dimension; baseline resource content must match.
     def baseline(proposal):
-        return {key: proposal["source_hashes"].get(key) for key in ("courses", "rooms", "schedule", "classes", "corrections")}
+        return {key: proposal["source_hashes"].get(key) for key in ("courses", "rooms", "schedule", "classes", "corrections", "rule_pack")}
 
     reference = baseline(proposals[0])
     targets = {r["course_id"] for r in proposals[0]["results"]}
     for proposal in proposals[1:]:
         if baseline(proposal) != reference:
-            raise ToolError("incomparable_proposals", "Baseline course/room/schedule/class/correction hashes differ")
+            raise ToolError("incomparable_proposals", "Baseline course/room/schedule/class/correction/rule-pack hashes differ")
         if {r["course_id"] for r in proposal["results"]} != targets:
             raise ToolError("incomparable_proposals", "Proposal target course sets differ")
     configs = [asdict(RepairConfig(**p["config"])) for p in proposals]
@@ -495,6 +532,7 @@ def _compare(arguments):
              "validation": proposal.get("validation", {})}
             for path, proposal, config in zip(arguments["proposal_paths"], proposals, configs)]
     return {"baseline_source_hashes": reference, "target_ids": sorted(targets), "proposals": rows,
+            "planning_assumptions": _planning_assumptions(proposals[0].get("correction_parameters", [])),
             "policy_or_budget_differences": differing, "same_recorded_policy_and_budget": not differing,
             "preference_cost_definition": "Sum of the existing engine's preference_cost for each unique (day, periods) pattern after each changed course; includes inserted and moved courses, without multiplying by weeks.",
             "interpretation": "Compare these as conditional policy/search scenarios. Changed policies do not establish better performance under identical hard constraints; identical recorded config alone is not a controlled solver experiment."}
