@@ -1,0 +1,12 @@
+{
+  "allowed_changes": ["time_preference", "building_preference", "historical_room"],
+  "time_scope": "same_day",
+  "target_ids": [],
+  "locked_ids": [],
+  "movable_ids": [],
+  "reviewed_soft_time_ids": [],
+  "max_moved_courses": 0,
+  "max_candidates_per_course": 10000,
+  "max_search_nodes": 200000,
+  "time_limit_seconds": 60
+}

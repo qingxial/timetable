@@ -1,0 +1,21 @@
+{
+  "purpose": "Session-authorized candidate timetable repair; preserve original workbooks.",
+  "authorization": "User permits evening/weekend fallback, corresponding evidence-based corrections, and agent-callable tools. Prior reviewed college time whitelist retained.",
+  "original_source_hashes": {
+    "courses": "ca830a4806d17f9949d7dca76f9ef6d47ba5e6fccb969e8b0b2e880c3ea870d7",
+    "rooms": "d1ea46160d052ca783c40501e846b41c4d9e921c0d80cec6a302e9966bc883fc",
+    "schedule": "abafcb561ed8eeff684195b8d06d4a277af4fee53ec8de1d8da98647edd8c224",
+    "classes": "37626e75deaf9e5223daf69e4c6946861884ff2dbc53486705041a154b45822a",
+    "failed": "831d07ca3435c6bbc7508365fa97912a51cad563205444a7d670ab1413de5ac1"
+  },
+  "correction_scope": "19 explicit LLXS-preserving weekly plans across original teaching weeks; 2 incomplete rows of one baseline course quarantined only after complete rows meet all LLXS/weeks.",
+  "planning_assumption": "LLXS is the selected authority for the candidate weekly plan. Frontloading is explicit, not uniquely inferred source truth.",
+  "not_executed": [
+    "capacity changes pending frozen enrollment evidence",
+    "class mapping fabrication",
+    "one-off week choice for 9 unresolved courses",
+    "automatic promotion of 274 SFXYPK=0 records"
+  ],
+  "source_workbooks_modified": false,
+  "comparison_warning": "New 57-course scope must be reported separately from the original 162-course failure list."
+}

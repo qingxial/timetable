@@ -1,0 +1,47 @@
+{
+  "scope": "Explicit per-course class/student conflict exclusion; only a candidate proposal, no workbook publication.",
+  "decision_basis": "2026-09-26 用户授权这20门按无班级处理并使用忽略选项。",
+  "target_ids": [
+    "150000290.059",
+    "150000290.060",
+    "150000290.065",
+    "150000290.067",
+    "61660003.001",
+    "61660003.002",
+    "61660004.002",
+    "61660008.001",
+    "61660009.001",
+    "61660010.002",
+    "61660011.001",
+    "61660011.002",
+    "61660012.002",
+    "61660012.004",
+    "61921003.001",
+    "62221001.002",
+    "15HLT003.001",
+    "15HLT004.001",
+    "15HLT005.001",
+    "15HLT006.001"
+  ],
+  "previously_disabled_ids": [
+    "150000290.059",
+    "150000290.060",
+    "150000290.065",
+    "150000290.067"
+  ],
+  "newly_disabled_count": 16,
+  "exclusion_scope_count": 20,
+  "seed_file": "repair-output/seed-176-response.json",
+  "seed_file_sha256": "4f2fa940e7adc3b57c9023da89f0bbf05b05cb8948712070b1cef89232186eb6",
+  "seed_source_hashes": {
+    "courses": "ca830a4806d17f9949d7dca76f9ef6d47ba5e6fccb969e8b0b2e880c3ea870d7",
+    "rooms": "d1ea46160d052ca783c40501e846b41c4d9e921c0d80cec6a302e9966bc883fc",
+    "schedule": "abafcb561ed8eeff684195b8d06d4a277af4fee53ec8de1d8da98647edd8c224",
+    "classes": "37626e75deaf9e5223daf69e4c6946861884ff2dbc53486705041a154b45822a",
+    "failed": "831d07ca3435c6bbc7508365fa97912a51cad563205444a7d670ab1413de5ac1",
+    "corrections": "e7688b780d7902aa7bdba2ab6a1c8f1a1e6a3496acb919f304c5bb415cddeef7"
+  },
+  "checks_kept": "Teacher responsibility weeks, existing room flag, required room type, campus, declared capacity, unavailable time, LLXS and teaching weeks; the class flag does not change any of them.",
+  "restrictions": "No student-conflict-free claim; no capacity reduction, classroom relabeling, class fabrication, source workbook edits or retained assignment moves.",
+  "replay_note": "Use the frozen 176-insertion seed exported with this run. Rerunning the earlier workflows after the loader compatibility fix can already place 4 courses and yields a different seed; do not treat that as the same retry experiment."
+}
