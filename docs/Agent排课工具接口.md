@@ -2,6 +2,8 @@
 
 `scripts/timetable_agent_tools.py` 提供十一个确定性工具及 JSON Schema，无需模型 SDK、网络请求或 pickle。Agent 根据已有授权选择参数、读取证据和解释结果；更正预检、候选搜索和校验由工具执行，输出是候选方案，不发布正式课表。
 
+若要将这些工具作为一次完整、可追溯的 Agent 调用，使用 `scripts/timetable_repair_agent.py`。它选择受限任务路径、对有更正的修复先做预检、保存每次调用和源哈希，并拒绝跨校区、未授权晚间/周末、写源工作簿和发布。格式与运行包见 [排课 Agent 工作流](排课Agent工作流.md)。
+
 下表的“四个输入”指 `course_path`、`room_path`、`schedule_path`、`failed_path`；这些工具均可另传 `class_path`、显式 `corrections`，以及经教务确认的 `rule_pack_path`。
 
 | 工具 | 必要输入 | 作用与限制 |
