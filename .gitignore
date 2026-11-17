@@ -1,0 +1,53 @@
+
+# Local large files & data directories
+my_models/
+智能排课基础数据/
+排课结果/
+排课结果 copy/
+排课结果1/
+排课结果2/
+排课要求和基础数据_v1.0.xlsx
+排课结果3/
+排课结果_xjtu/
+
+# IDE & tools
+.venv/
+venv/
+env/
+.claude/
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs and caches
+/repair-runs/
+/repair-output/
+/agent-runs/
+/webapp/data/
+*.log
+log*.txt
+logs/
+.cache/
+
+# Office 临时锁文件
+~$*
+
+# macOS
+.DS_Store
+# Office
+*.pptx
+*.tmp
+
+# Local migration snapshots
+/.migration-backups/
+
+# Local credentials and institutional data
+.env
+.env.*
+*.xlsx
+*.xlsm
+*.xls

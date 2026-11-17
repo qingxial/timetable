@@ -1,0 +1,698 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f8f5">
+  <title>排课协同台</title>
+  <style>
+    :root{--ink:#18251f;--muted:#718078;--line:#e6ebe6;--paper:#fff;--bg:#f5f7f4;--green:#176b4c;--green2:#e8f4ed;--orange:#a95d2b;--orange2:#fbf0e7;--blue:#3f6d9a;--blue2:#edf4fa;--shadow:0 12px 36px #1d38240b}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Microsoft YaHei",sans-serif}button,input,textarea{font:inherit}button{cursor:pointer}button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid #8cc8a6;outline-offset:2px}
+    .app{max-width:1600px;margin:auto;min-height:100vh;padding:0 28px 28px}.topbar{height:76px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}.brand{display:flex;align-items:center;gap:12px;font-weight:720;font-size:17px;letter-spacing:.01em}.brand-mark{width:36px;height:36px;border-radius:12px;background:var(--green);color:white;display:grid;place-items:center;font-size:19px}.top-right{display:flex;align-items:center;gap:14px}.service{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px}.dot{height:8px;width:8px;border-radius:50%;background:#d7a553}.dot.online{background:#4aaf78;box-shadow:0 0 0 3px #4aaf781c}.user-badge{width:34px;height:34px;border-radius:50%;background:#e5ece7;display:grid;place-items:center;color:#446351;font-size:13px;font-weight:700}
+    .layout{display:grid;grid-template-columns:270px minmax(460px,1fr) 286px;gap:20px;padding-top:22px;align-items:start}.panel{background:var(--paper);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow)}.sidebar{padding:18px 16px;position:sticky;top:20px}.side-title{font-size:11px;text-transform:uppercase;letter-spacing:.11em;color:#8a968f;font-weight:700;margin:4px 8px 12px}.nav-item{border:0;background:transparent;width:100%;height:42px;border-radius:10px;text-align:left;padding:0 12px;color:#526158;display:flex;align-items:center;gap:11px;margin:3px 0}.nav-item.active{background:var(--green2);color:var(--green);font-weight:650}.nav-icon{width:19px;text-align:center;font-size:17px}.side-divider{height:1px;background:var(--line);margin:18px 0}.privacy-note{background:#f6f8f6;border-radius:12px;padding:13px 14px;margin-top:18px;color:#66736b;font-size:12px}.privacy-note strong{color:#3d5145;display:block;font-size:12px;margin-bottom:4px}.privacy-note .shield{font-size:15px;margin-right:5px}
+    .main{min-width:0}.page-heading{display:flex;justify-content:space-between;align-items:flex-start;margin:2px 2px 17px}.eyebrow{color:var(--green);font-size:12px;font-weight:700;letter-spacing:.08em}.page-heading h1{font-size:25px;letter-spacing:-.025em;margin:3px 0 2px}.page-heading p{margin:0;color:var(--muted);font-size:13px}.history{border:1px solid var(--line);background:#fff;border-radius:10px;color:#526158;padding:8px 12px;font-size:12px}.chat-panel{overflow:hidden}.chat-head{height:55px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 18px}.chat-title{font-weight:650;font-size:14px}.mode-badge{font-size:11px;color:var(--green);background:var(--green2);border-radius:20px;padding:4px 9px}.messages{height:min(50vh,510px);min-height:380px;overflow-y:auto;padding:22px 21px;background:linear-gradient(180deg,#fff,#fdfefd)}.message{width:fit-content;min-width:0;display:flex;gap:10px;margin-bottom:19px;max-width:92%}.message.user{margin-left:auto;flex-direction:row-reverse}.avatar{height:29px;width:29px;flex:0 0 29px;border-radius:10px;background:var(--green2);color:var(--green);display:grid;place-items:center;font-size:13px;font-weight:700}.message.user .avatar{background:#e9edf3;color:#526a8b}.bubble{min-width:0;writing-mode:horizontal-tb;overflow-wrap:anywhere;background:#f4f7f4;border:1px solid #edf1ed;border-radius:4px 14px 14px 14px;padding:11px 14px;color:#34423a;font-size:13px;white-space:pre-wrap;max-width:100%}.message.user .bubble{background:#edf4fa;border-color:#e2ecf5;border-radius:14px 4px 14px 14px}.bubble strong{color:#233c2d}.bubble .sub{display:block;color:#748078;font-size:12px;margin-top:6px}.quick-prompts{display:flex;gap:8px;flex-wrap:wrap;margin:0 21px 17px}.quick{background:#fff;border:1px solid var(--line);border-radius:18px;padding:7px 11px;color:#4c5d52;font-size:11px}.quick:hover{border-color:#9cc9ac;color:var(--green)}.composer{padding:0 17px 15px}.input-wrap{border:1px solid #dfe7df;border-radius:14px;background:#fff;padding:10px 11px 8px;box-shadow:0 3px 12px #253d2708}.input-wrap:focus-within{border-color:#9cc9ac}.input-wrap textarea{width:100%;resize:vertical;min-height:54px;max-height:130px;border:0;outline:0;padding:4px 5px;color:var(--ink);font-size:13px}.input-wrap textarea::placeholder{color:#a3ada6}.composer-bottom{display:flex;align-items:center;justify-content:space-between;padding:5px 1px 0}.hint{color:#8b968f;font-size:10px}.send{border:0;border-radius:9px;background:var(--green);color:white;padding:8px 15px;font-weight:650;font-size:12px;display:flex;align-items:center;gap:7px}.send:hover{background:#105b40}.send:disabled{opacity:.55;cursor:wait}
+    .upload-panel{padding:16px;margin-top:15px}.section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}.section-head h2{margin:0;font-size:14px}.section-head span{font-size:10px;color:var(--muted)}.section-copy{font-size:11px;color:var(--muted);margin:2px 0 12px}.uploads{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.uploads[hidden]{display:none}.upload{position:relative;border:1px dashed #d7e0d7;border-radius:11px;padding:10px 10px 9px;min-height:91px;background:#fbfcfb;transition:.15s}.upload:hover,.upload.ready{border-color:#85bd99;background:#f5faf6}.upload input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}.upload .ico{font-size:17px;color:#698773}.upload b{display:block;font-size:11px;margin-top:3px}.upload small{display:block;color:#89958d;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.upload.ready small{color:var(--green)}.policy-strip{margin-top:10px;padding:9px 11px;background:#f8f9f7;border-radius:10px;color:#748078;font-size:10px;display:flex;gap:7px;align-items:flex-start}.policy-strip strong{color:#526158}
+    .right{display:grid;gap:14px}.right-card{padding:17px}.right-card h2{font-size:13px;margin:0 0 13px}.setting{padding:10px 0;border-top:1px solid #f0f2f0}.setting:first-of-type{border-top:0;padding-top:0}.setting label.title{display:block;font-size:12px;font-weight:620;color:#3b4c41}.setting .desc{font-size:10px;color:#849088;display:block;margin-top:2px}.toggle-row{display:flex;justify-content:space-between;align-items:center}.switch{position:relative;width:34px;height:19px;display:inline-block}.switch input{opacity:0;width:0;height:0}.slider{position:absolute;inset:0;border-radius:20px;background:#dce2dc;transition:.15s;cursor:pointer}.slider:before{content:"";position:absolute;height:15px;width:15px;left:2px;top:2px;background:white;border-radius:50%;transition:.15s;box-shadow:0 1px 3px #0002}.switch input:checked+.slider{background:#27815b}.switch input:checked+.slider:before{transform:translateX(15px)}.select{margin-top:7px;width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;background:white;font-size:11px;color:#46564b}.campus-lock{padding:12px;border-radius:12px;background:var(--orange2);color:#775338;font-size:11px}.campus-lock strong{display:block;color:#925729;margin-bottom:3px}.campus-lock span{display:block;font-size:10px;color:#9b7559}.run-card{padding:16px}.run-head{display:flex;justify-content:space-between;align-items:center}.run-head h2{font-size:13px;margin:0}.run-id{font-size:9px;color:#88948d}.metric{display:flex;align-items:baseline;justify-content:space-between;padding:9px 0;border-bottom:1px solid #f1f3f1;font-size:11px;color:#69756e}.metric strong{font-size:15px;color:#253b2e}.metric .green{color:var(--green)}.empty-run{text-align:center;padding:18px 8px 7px;color:#8b968f;font-size:11px}.empty-icon{width:38px;height:38px;border-radius:12px;background:#f4f7f4;display:grid;place-items:center;margin:0 auto 8px;font-size:17px}.footnote{font-size:9px;color:#98a29b;margin-top:13px;line-height:1.55}
+    .layout.history-mode{grid-template-columns:270px minmax(460px,1fr)}.layout.history-mode>.right{display:none}
+    .toast{position:fixed;left:50%;bottom:22px;transform:translate(-50%,20px);opacity:0;pointer-events:none;background:#203d2d;color:white;border-radius:12px;padding:10px 15px;box-shadow:0 8px 30px #0002;font-size:12px;transition:.2s;z-index:5}.toast.show{opacity:1;transform:translate(-50%,0)}.result-card{border:1px solid #e4ede5;border-radius:11px;background:#fff;padding:12px;margin-top:8px}.result-title{font-weight:650;font-size:12px}.result-stats{display:flex;gap:12px;margin-top:7px}.result-stat{font-size:10px;color:#728077}.result-stat b{font-size:15px;display:block;color:#294635}.error{color:#a34d39;background:#fcf2ef;border:1px solid #f4dfd9;border-radius:10px;padding:10px;font-size:11px;margin-top:8px}.details{font-size:10px;color:#67736b;margin-top:7px;max-height:150px;overflow:auto}.details li{margin:4px 0}
+    @media(max-width:1180px){.layout{grid-template-columns:230px minmax(420px,1fr)}.right{grid-column:2;grid-template-columns:1fr 1fr}.right-card,.run-card{min-width:0}.sidebar{grid-row:span 2}}
+    @media(max-width:760px){.app{padding:0 13px 20px}.topbar{height:62px}.brand{font-size:14px}.service{font-size:0}.service .dot{margin-right:5px}.layout{display:flex;flex-direction:column;gap:12px;padding-top:13px}.sidebar{display:none}.main,.right{width:100%}.page-heading h1{font-size:21px}.page-heading p{font-size:11px}.history{font-size:10px;padding:7px}.messages{height:45vh;min-height:330px;padding:17px 13px}.message{max-width:100%}.quick-prompts{margin:0 13px 13px}.composer{padding:0 11px 12px}.uploads{grid-template-columns:repeat(2,1fr)}.right{display:grid;grid-template-columns:1fr 1fr}.right-card,.run-card{padding:13px}.right-card:first-child{grid-column:1/-1}.right-card h2{margin-bottom:9px}}
+  
+    .live-progress{margin:0 21px 14px;padding:12px;border:1px solid var(--line);border-radius:10px;background:#f8faf8}
+    .live-progress progress{width:100%;height:12px;accent-color:var(--green)}
+    .live-progress .progress-label{font-size:12px;color:#344c3d;margin-bottom:5px}
+    .live-progress pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:190px;overflow:auto;font-size:11px;line-height:1.6;margin:8px 0 0}
+    .scope-tag{display:inline-block;font-size:10px;font-weight:600;color:#5a6b61;background:#eef3ef;border-radius:6px;padding:1px 6px;margin-bottom:4px}
+    .action-help{font-size:11px;color:#4f5f55;background:#f6f9f6;border:1px solid #e8efe9;border-radius:8px;padding:7px 9px;margin:7px 0 0;line-height:1.55}
+    [hidden]{display:none!important}
+    .room-review-card{margin:16px 0;padding:18px;border:1px solid #dce6df;border-radius:16px;background:#fff;box-shadow:0 3px 14px #183b2310}.room-review-card strong{display:block;font-size:15px}.room-review-card select{width:100%;margin:12px 0;padding:10px;border:1px solid #ccdcd2;border-radius:8px;background:#f7faf8;color:var(--ink)}.review-table-wrap{overflow-x:auto}.review-table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;min-width:340px}.review-table th,.review-table td{text-align:left;padding:10px 8px;border-bottom:1px solid #e7ede8;overflow-wrap:anywhere}.review-table th{color:var(--muted);font-weight:500;background:#f8faf8}.review-table th:first-child{width:24%}.review-changed td:last-child{background:#e9f5ee;color:#116340;font-weight:600}.review-actions{display:flex;gap:10px;margin-top:14px}.review-accept{background:#176b4c!important;color:#fff!important;border-color:#176b4c!important}.review-status{font-size:12px;color:#8d622d;white-space:pre-wrap;margin-top:8px}.class-evidence{font-size:12px;white-space:pre-wrap;background:#fff7e8;padding:12px;border-radius:8px}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand"><div class="brand-mark">课</div><span>排课协同台</span></div>
+      <div class="top-right"><div class="service"><span id="statusDot" class="dot"></span><span id="serviceText">正在连接本机排课服务…</span></div><div class="user-badge">教</div></div>
+    </header>
+    <div class="layout">
+      <aside class="panel sidebar" aria-label="主导航">
+        <div class="side-title">工作空间</div>
+        <button class="nav-item active" id="conversationNav"><span class="nav-icon">◉</span>排课对话</button>
+        <button class="nav-item" id="historyNav"><span class="nav-icon">◷</span>运行记录</button>
+        <div class="side-divider"></div>
+        <div class="side-title">排课工具</div>
+        <button class="nav-item" id="qualityNav"><span class="nav-icon">▥</span>排课质量检查</button>
+        <button class="nav-item" data-prompt="请根据我上传的当前候选，逐门说明未排入课程的原因。"><span class="nav-icon">⌕</span>剩余课程诊断</button>
+        <button class="nav-item" data-prompt="请基于上传的课程、教室、已排课和失败课程表，生成一个尽量少扰动已有安排的补排候选。"><span class="nav-icon">↗</span>补排候选</button>
+        <button class="nav-item" data-prompt="请解释这些课程无法排入的主要冲突约束，并给出需要教务核实的事项。"><span class="nav-icon">≋</span>冲突解释</button>
+        <div class="privacy-note"><strong><span class="shield">⬡</span>数据与规则保护</strong>当前仅连接本机服务。源 Excel 保持只读；方案是候选结果，需要教务审核。</div>
+      </aside>
+      <main class="main">
+        <section id="conversationView">
+        <div class="page-heading"><div><div class="eyebrow">TIMETABLE WORKSPACE</div><h1>排课对话</h1><p>用自然语言描述目标，排课工具会给出可核验的候选与原因。</p></div><button class="history" id="historyTop">运行记录</button><button class="history" id="qualityTop">检查排课质量</button><button class="history" id="newTask">＋ 新建任务</button></div>
+        <section class="panel chat-panel" aria-label="排课对话区">
+          <div class="chat-head"><span class="chat-title">教务排课助手</span><span class="mode-badge" id="modeBadge">规则引擎 · 本地运行</span></div>
+          <div class="messages" id="messages" aria-live="polite">
+            <div class="message"><div class="avatar">课</div><div class="bubble"><strong>你好，我是排课协同助手。</strong><br>先在右侧“任务设置”选工作类型，下方会说明这一类需要哪些文件、哪些开关会生效。然后在这里写下需求并发送。<span class="sub">我不会跨校区调课，也不会覆盖原始 Excel。</span></div></div>
+          </div>
+          <section id="liveProgress" class="live-progress" hidden aria-label="实时任务进度">
+            <div id="progressLabel" class="progress-label" role="status">等待进度…</div>
+            <progress id="progressBar" max="100" aria-label="当前阶段处理百分比"></progress>
+            <div class="details">百分比表示当前阶段已处理比例，不是排课成功率；AI 阶段表示轮次预算使用比例。</div>
+            <pre id="progressLogs" aria-label="实时逐课日志"></pre>
+          </section>
+          <div class="quick-prompts"><button class="quick" data-prompt="请先诊断未排课程，说明每门课卡在哪里。">诊断未排原因</button><button class="quick" data-prompt="请保留已有排课，尽量少调整地补排剩余课程。">保留已有安排，继续补排</button><button class="quick" data-prompt="请在已经授权的范围内尝试补排，并说明每个失败项的原因。">按授权范围生成候选</button></div>
+          <form class="composer" id="chatForm"><div class="input-wrap"><textarea id="prompt" placeholder="例如：保留已排课程，先按工作日白天补排；对无法排入的课程逐门说明原因…" required></textarea><div class="composer-bottom"><span class="hint">Enter 发送 · Shift + Enter 换行</span><button type="button" class="history" id="cancelTask" hidden>中止当前任务</button><button class="send" id="sendButton" type="submit"><span>生成方案</span><span aria-hidden="true">↗</span></button></div></div></form>
+        </section>
+        <section class="panel upload-panel">
+          <div class="section-head"><h2>本次任务数据</h2><span id="fileType">Excel · .xlsx</span></div><p class="section-copy" id="fileHelp">文件会传给本机排课服务用于本次计算，并保留在本地运行记录中。</p>
+          <div id="stateHandoff" class="details" hidden><label><input type="checkbox" id="continueState" checked> 接着当前课表版本处理</label><span id="stateLabel"></span></div>
+          <div class="uploads" id="repairUploads">
+            <label class="upload" data-file="course"><input type="file" accept=".xlsx,.xlsm" name="course"><span class="ico">▤</span><b>课程表</b><small>课程与教师责任周</small></label>
+            <label class="upload" data-file="teacher"><input type="file" accept=".xlsx,.xlsm" name="teacher"><span class="ico">♙</span><b>教师表</b><small>核对课程教师编号</small></label>
+            <label class="upload" data-file="room"><input type="file" accept=".xlsx,.xlsm" name="room"><span class="ico">▦</span><b>教室表</b><small>选择教室资源文件</small></label>
+            <label class="upload" data-file="class_path"><input type="file" accept=".xlsx,.xlsm" name="class_path"><span class="ico">▧</span><b>班级表</b><small>保留班级资料，不检查班级撞课</small></label>
+            <label class="upload" data-file="schedule"><input type="file" accept=".xlsx,.xlsm" name="schedule"><span class="ico">▧</span><b>当前课表</b><small>选择已排课文件</small></label>
+            <label class="upload" data-file="failed"><input type="file" accept=".xlsx,.xlsm" name="failed"><span class="ico">▥</span><b>未排课程</b><small>选择待补排课程文件</small></label>
+          </div>
+          <div class="uploads" id="initialBatchUploads" hidden>
+            <label class="upload" data-file="combinations"><input type="file" accept=".xlsx,.xlsm" name="combinations"><span class="ico">▤</span><b>筛选组合表（可选）</b><small>开课单位、课程类别；不填则全部课程一个组合</small></label>
+            <label class="upload" data-file="clustering"><input type="file" accept=".xlsx,.xlsm" name="clustering"><span class="ico">▧</span><b>聚类结果表（可选）</b><small>JXBID、类别ID、类别名称；不填则不分聚类</small></label>
+          </div>
+          <div class="uploads" id="diagnoseUploads" hidden><label class="upload" data-file="proposal"><input type="file" accept=".json" name="proposal"><span class="ico">▧</span><b>已有候选方案</b><small>选择 proposal.json</small></label></div>
+          <div class="policy-strip"><span>ⓘ</span><span><strong>开始前请确认文件口径一致。</strong>系统只生成候选方案，不修改源文件或正式发布课表。</span></div>
+        </section>
+        </section>
+        <section id="historyView" hidden aria-label="运行记录独立页面">
+          <div class="page-heading"><div><div class="eyebrow">RUN HISTORY</div><h1>运行记录</h1><p>查看运行过程、保存版本和确认结果；浏览不会改变排课对话。</p></div><button class="history" id="historyBack">返回排课对话</button></div>
+          <div id="historyList" class="panel" style="padding:16px"></div>
+          <section id="historyDetail" class="panel" style="padding:16px;margin-top:16px" hidden></section>
+        </section>
+      </main>
+      <aside class="right">
+        <section class="panel right-card">
+          <h2>任务设置</h2>
+          <div class="setting"><label class="title" for="taskAction">工作类型</label><select class="select" id="taskAction"><option value="initial_schedule" selected>首次排课（四张基础表，结束后自动调课）</option><option value="repair">生成补排候选（规则或 AI 多轮）</option><option value="legacy_reschedule">原始调课引擎（挪动已排课程腾时段）</option><option value="diagnose">诊断已有候选（上传 proposal.json）</option><option value="inspect_acceptance">查看验收与解释（只读）</option></select><p class="action-help" id="actionHelp" role="note"></p></div>
+          <div id="initialSettings" hidden class="setting"><span class="scope-tag">仅首次排课</span><label class="title" for="initialWeeks">学期周数</label><input id="initialWeeks" class="select" type="number" min="1" max="53" value="20"><label class="title" for="initialStrategy">首轮策略</label><select class="select" id="initialStrategy"><option value="first">原始候选放置</option><option value="balanced" selected>负载均衡</option><option value="random">随机候选</option></select><label class="title" for="initialSeed">随机种子</label><input id="initialSeed" class="select" type="number" step="1" value="2026"><p class="details">从空白课表开始，按原引擎每批 50 门、批内动态选课，完成后自动调用原调课引擎；可选上传筛选组合与聚类结果表。生成独立根版本，不覆盖已有课表；未排课程保留原因。</p></div>
+          <div class="setting" id="eveningSetting"><span class="scope-tag">补排 · 原始调课</span><label class="title">允许晚间排课（第 9-11 节）</label><div class="toggle-row"><span class="desc">关闭时只在第 1-8 节找新时段</span><label class="switch"><input type="checkbox" id="allowEvening"><span class="slider"></span></label></div></div>
+          <div class="setting" id="weekendSetting"><span class="scope-tag">补排 · 原始调课</span><label class="title">允许周末排课</label><div class="toggle-row"><span class="desc">关闭时只在周一至周五找新时段</span><label class="switch"><input type="checkbox" id="allowWeekend"><span class="slider"></span></label></div></div>
+          <div class="setting" id="legacyMoveSetting" hidden><span class="scope-tag">仅原始调课</span><label class="title">允许挪动已排课程</label><div class="toggle-row"><span class="desc">原调课引擎靠挪走已排课程腾出时段，被挪的课也只排到上面允许的时间。关闭后只要挪动一门，整次结果作废</span><label class="switch"><input type="checkbox" id="legacyAllowMove" checked><span class="slider"></span></label></div>
+            <p class="details" id="legacyAcceptanceNote">验收口径：偏好时间是软约束，偏离只记警告；不检查班级冲突（原引擎多次失败后会放宽班级）。教师、教室、校区、禁排时间仍必须满足。</p></div>
+          <div class="setting" id="plannerSetting"><span class="scope-tag">仅补排</span><label class="title" for="planner">补排方式</label><span class="desc">求解都由现有排课算法完成；AI 只负责决定调用哪个工具</span><select class="select" id="planner"><option value="deterministic">规则规划（无需 AI）</option><option value="agent">全部未排课程 · 连续补排</option></select></div>
+          <details class="setting" id="agentSettings"><summary class="title">AI 优化范围与预算 <span class="scope-tag">仅 AI 多轮</span></summary>
+            <label><input id="agentProcessAll" type="checkbox" checked>自动接续处理全部未排课程</label><p class="details">每批最多60门，自动接续其他批次；本轮最多运行10分钟。待确认课程单独列出，不阻塞其他课程。预算用完显示未完成数量，可从断点继续。</p><label class="title" for="agentMaxMoves">整个任务最多移动已有课程数</label><input class="select" id="agentMaxMoves" type="number" min="0" max="30" value="0">
+            <label><input id="agentChooseMovable" type="checkbox">允许 AI 在非锁定课程中选择可动课程</label>
+            <label class="title" for="agentMovableIds">指定可动教学班 ID（不勾选自动选择时使用）</label><textarea class="select" id="agentMovableIds" placeholder="逗号或换行分隔"></textarea>
+            <label class="title" for="agentLockedIds">锁定教学班 ID</label><textarea class="select" id="agentLockedIds" placeholder="这些已有课程始终保持不动"></textarea>
+            <label class="title" for="agentMaxRounds">手动 AI 模式最多决策轮次（关闭自动接续时生效）</label><input class="select" id="agentMaxRounds" type="number" min="1" max="8" value="6">
+            <label class="title" for="weightPreference">时间偏好代价权重</label><input class="select" id="weightPreference" type="number" min="0" max="100" value="1">
+            <label class="title" for="weightEvening">晚间代价权重</label><input class="select" id="weightEvening" type="number" min="0" max="100" value="2">
+            <label class="title" for="weightWeekend">周末代价权重</label><input class="select" id="weightWeekend" type="number" min="0" max="100" value="4">
+            <p class="details">只在“生成补排候选 + AI 多轮排课助手”时生效，原始调课不读取这里的设置。默认不移动已有课程；允许移动时，AI 可在预算内选择具体课程。人数、班级、教学周等事实仍需证据，不会自动更改。AI 会读取目标、教学班 ID 及诊断摘要，原始教师名单和源表不直接发送。</p>
+          </details>
+          <details class="setting" id="aiSettings"><summary class="title">AI 连接设置</summary>
+            <label class="title" for="aiBaseUrl">DASHSCOPE_BASE_URL</label><input class="select" id="aiBaseUrl" type="url" placeholder="留空使用服务端默认地址" autocomplete="off">
+            <label class="title" for="aiModel">DASHSCOPE_MODEL</label><input class="select" id="aiModel" type="text" placeholder="留空使用服务端默认模型" autocomplete="off">
+            <label class="title" for="aiApiKey">API Key</label><input class="select" id="aiApiKey" type="password" placeholder="首次填写 Key；已保存时留空即可" autocomplete="off" spellcheck="false">
+            <p class="details">用于“AI 多轮排课助手”。点击“保存并应用”后，本机服务自动记住配置，刷新或重启无需重填。Key 不返回浏览器、不写入运行记录。Key 与请求会发送到你指定的 Base URL。首轮排课和规则规划无需 Key。</p>
+            <button type="button" class="history" id="saveAiSettings">保存并应用</button><button type="button" class="history" id="testAiConnection">测试连接</button><button type="button" class="history" id="clearAiSettings">清空输入</button>
+            <p class="details" id="aiConnectionStatus" role="status"></p>
+          </details>
+          <div class="campus-lock"><strong>⌖ 校区规则已锁定</strong><span>永久禁止跨校区调整，不能在此处放宽。</span></div>
+        </section>
+        <section class="panel run-card" id="runCard">
+          <div class="run-head"><h2>本次运行</h2><span class="run-id" id="runId">尚未开始</span></div>
+          <div class="empty-run" id="emptyRun"><div class="empty-icon">◌</div>上传数据并发送需求后<br>这里会显示执行结果与审计信息。</div>
+          <div id="runResult" hidden></div>
+          <p class="footnote">运行记录当前保存在预览服务的数据目录。正式使用时由托管平台保存运行状态，并配置账号权限、备份与数据保留周期。</p>
+        </section>
+      </aside>
+    </div>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+  <script>
+    const files = {};
+    let currentJobId = null;
+    let agentContext = '';
+    let agentPreviousRun = '';
+    let previousChatRunId=localStorage.getItem('timetableChatRunId')||'';
+    const requestedSelectionRun = new URLSearchParams(location.search).get('run_id')||localStorage.getItem('timetableDraftRunId')||'';
+    let activeStateId = localStorage.getItem('timetableStateId') || '';
+    let activeDraftRunId = localStorage.getItem('timetableDraftRunId') || '';
+    const resourceChoiceMemory=new Map();
+    let activeViewedRunId = localStorage.getItem('timetableViewedRunId') || '';
+    let activeSelectionCounts = null;
+    let selectionPending = Boolean(requestedSelectionRun);
+    if(activeDraftRunId){activeStateId='';localStorage.removeItem('timetableStateId');}
+    // A URL selects its own result, even before the asynchronous fetch finishes.
+    if(selectionPending){activeStateId='';activeDraftRunId='';activeViewedRunId='';['timetableStateId','timetableDraftRunId','timetableViewedRunId'].forEach(k=>localStorage.removeItem(k));}
+
+    const messages = document.getElementById('messages');
+    const toast = document.getElementById('toast');
+    let toastTimer;
+    function notify(text){toast.textContent=text;toast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),2800)}
+    function addMessage(text, role='assistant', html=false){const row=document.createElement('div');row.className=`message ${role==='user'?'user':''}`;const avatar=document.createElement('div');avatar.className='avatar';avatar.textContent=role==='user'?'教':'课';const bubble=document.createElement('div');bubble.className='bubble';if(html)bubble.innerHTML=text;else bubble.textContent=text;row.append(avatar,bubble);messages.append(row);messages.scrollTop=messages.scrollHeight;return bubble}
+    // Questions and forms that need the user's answer belong in the conversation.
+    // One bubble per run and prompt kind: re-rendering the same run moves it to the
+    // bottom instead of duplicating it.
+    function askInChat(key,text){
+      messages.querySelectorAll('[data-ask-key]').forEach(old=>{if(old.dataset.askKey===key)old.closest('.message').remove();});
+      const bubble=addMessage(text);bubble.dataset.askKey=key;return bubble;
+    }
+    function scrollChat(){messages.scrollTop=messages.scrollHeight;}
+    function pointToChat(target,text){const note=document.createElement('p');note.className='details';note.textContent=text;target.append(note);}
+    document.querySelectorAll('.upload input').forEach(input=>input.addEventListener('change',()=>{const key=input.name;const label=input.closest('.upload');const file=input.files[0];if(!file){delete files[key];label.classList.remove('ready');label.querySelector('small').textContent='选择文件';return}files[key]=file;label.classList.add('ready');label.querySelector('small').textContent=file.name}));
+    function selectionFromResult(data){
+      const runId=(data.run_dir||'').split('/').pop();
+      const result=data.final_response?.result||{};
+      const candidate=Array.isArray(result.placements)?result:null;
+      const summary=candidate?{placed:new Set(candidate.placements.map(p=>p.course_id)).size,remaining:candidate.remaining_course_ids?.length}:result.summary||data.agent_report?.summary||{};
+      if(data.output_state_id)return {kind:'state',state_id:data.continuation_state_id||data.output_state_id,run_id:runId||'',summary};
+      if(runId&&(data.data_completion?.saved||data.hour_review?.pending||candidate))return {kind:'draft',run_id:runId,summary};
+      return {kind:'none',run_id:runId||'',summary:{}};
+    }
+    function activateState(stateId,runId=''){
+      activeStateId=stateId;activeDraftRunId='';activeViewedRunId=runId;activeSelectionCounts=null;
+      localStorage.setItem('timetableStateId',stateId);localStorage.removeItem('timetableDraftRunId');
+      if(runId)localStorage.setItem('timetableViewedRunId',runId);else localStorage.removeItem('timetableViewedRunId');
+    }
+    function applyResultSelection(data){
+      const selection=selectionFromResult(data);
+      activeStateId='';activeDraftRunId='';activeViewedRunId=selection.run_id;activeSelectionCounts=selection.summary;
+      ['timetableStateId','timetableDraftRunId','timetableViewedRunId'].forEach(k=>localStorage.removeItem(k));
+      if(selection.kind==='state'){activeStateId=selection.state_id;localStorage.setItem('timetableStateId',activeStateId);}
+      if(selection.kind==='draft'){activeDraftRunId=selection.run_id;localStorage.setItem('timetableDraftRunId',activeDraftRunId);}
+      if(activeViewedRunId)localStorage.setItem('timetableViewedRunId',activeViewedRunId);
+      if(selection.kind!=='none'){document.getElementById('continueState').checked=true;document.getElementById('taskAction').value='repair';}
+      syncState();syncAction();
+    }
+    function syncState(){
+      const box=document.getElementById('stateHandoff');box.hidden=!(activeStateId||activeDraftRunId);
+      const counts=activeSelectionCounts?.placed!==undefined?` · 已排 ${activeSelectionCounts.placed} 门 · 未排 ${activeSelectionCounts.remaining??'待核'} 门`:'';
+      document.getElementById('stateLabel').textContent=activeDraftRunId?`当前候选 ${activeDraftRunId}${counts} · 待验收，不能直接调课`:activeStateId?`当前版本 ${activeStateId.slice(0,12)}…${counts}`:'尚未选择可处理的课表';
+    }
+    syncState();
+    function syncAction(){
+      const action=document.getElementById('taskAction').value, initial=action==='initial_schedule', diagnose=action==='diagnose', inspect=action==='inspect_acceptance';
+      document.getElementById('repairUploads').hidden=diagnose||inspect;
+      document.getElementById('diagnoseUploads').hidden=!diagnose;
+      document.getElementById('initialSettings').hidden=!initial;
+      // 每个开关只在它真正生效的工作类型下显示，避免“设了却不起作用”。
+      const legacy=action==='legacy_reschedule', repair=action==='repair', agent=repair&&document.getElementById('planner').value==='agent';
+      document.getElementById('legacyMoveSetting').hidden=!legacy;
+      ['eveningSetting','weekendSetting'].forEach(id=>document.getElementById(id).hidden=!(repair||legacy));
+      document.getElementById('plannerSetting').hidden=!repair;
+      document.getElementById('agentSettings').hidden=!agent;
+      document.getElementById('modeBadge').textContent=agent?'AI 多轮 · 需要 AI 连接':initial?'首次排课 · 原引擎':legacy?'原始调课 · 规则执行':inspect?'只读查看':diagnose?'诊断 · 只读':'规则补排 · 本地运行';
+      document.getElementById('actionHelp').textContent={
+        initial_schedule:'上传四张基础表，按原流程从空白课表开始排，保存为新的根版本，然后自动调用原调课引擎。首排沿用原脚本的时段规则，下面的晚间/周末开关不参与。',
+        repair:'从当前课表版本出发，为未排课程找新时段；默认不挪动已排课程。可选规则规划或 AI 多轮。',
+        legacy_reschedule:'从当前课表版本出发，用原调课引擎排未排课程；需要时会挪动已排课程腾出时段。只按规则执行，不使用 AI。',
+        diagnose:'读取之前运行生成的 proposal.json，逐门显示状态和证据。不排课，也不生成新版本。',
+        inspect_acceptance:'只查看所选候选或版本的验收证据，不启动排课或调课，不需要上传文件。'}[action]||'';
+      document.getElementById('initialBatchUploads').hidden=!initial;
+      document.querySelectorAll('[data-file="schedule"], [data-file="failed"]').forEach(el=>el.hidden=initial);
+      document.getElementById('stateHandoff').hidden=initial||diagnose||!(activeStateId||activeDraftRunId);
+      document.getElementById('planner').disabled=initial||inspect;
+      document.getElementById('fileType').textContent=diagnose?'JSON · .json':'Excel · .xlsx';
+      document.getElementById('fileHelp').textContent=inspect?'只读查看所选候选或版本的验收证据；不需要重新上传文件，不会启动排课或调课。':initial?'需要：课程表、教师表、教室表、班级表（必传），筛选组合表、聚类结果表（可选，不传就全部课程一起排、不分聚类）。':diagnose?'上传 proposal.json，查看逐课证据。':(activeDraftRunId&&document.getElementById('continueState').checked?'当前是待验收候选，请先处理验收问题；不会回退使用其他课表版本。':activeStateId&&document.getElementById('continueState').checked?'接着上方选中的课表版本处理，不需要上传文件；上传的文件也不会被使用。':'没有选中课表版本：需要上传全部六张表（含当前课表和未排课程）建立起点。要接着已有版本处理，请到“运行记录”选择版本。');
+      if(selectionPending)document.getElementById('sendButton').disabled=true;
+      document.getElementById('sendButton').querySelector('span').textContent=initial?'开始首次排课':diagnose?'诊断方案':action==='inspect_acceptance'?'查看验收解释':action==='legacy_reschedule'?'运行原始调课':'生成方案';
+    }
+    document.getElementById('taskAction').addEventListener('change',syncAction);
+    document.getElementById('continueState').addEventListener('change',syncAction);
+    syncAction();
+    document.getElementById('planner').addEventListener('change',()=>{document.getElementById('agentSettings').open=document.getElementById('planner').value==='agent';syncAction();});
+    document.querySelectorAll('[data-prompt]').forEach(button=>button.addEventListener('click',()=>{showWorkspace('conversation');const action=document.getElementById('taskAction');action.value=button.textContent.includes('诊断')?'diagnose':'repair';action.dispatchEvent(new Event('change'));document.getElementById('prompt').value=button.dataset.prompt;document.getElementById('prompt').focus()}));
+    document.getElementById('newTask').addEventListener('click',()=>{showWorkspace('conversation');messages.innerHTML='';agentContext='';agentPreviousRun='';previousChatRunId='';localStorage.removeItem('timetableChatRunId');activeStateId='';activeDraftRunId='';activeViewedRunId='';activeSelectionCounts=null;['timetableStateId','timetableDraftRunId','timetableViewedRunId'].forEach(k=>localStorage.removeItem(k));history.replaceState(null,'',location.pathname);syncState();syncAction();addMessage('新任务已准备好。上传本次使用的数据文件，描述你的排课目标即可。源表仍保持只读，跨校区调整始终禁止。');document.getElementById('runResult').hidden=true;document.getElementById('emptyRun').hidden=false;document.getElementById('runId').textContent='尚未开始'});
+    function showWorkspace(view){
+      const historyView=view==='history';document.getElementById('conversationView').hidden=historyView;document.getElementById('historyView').hidden=!historyView;
+      document.querySelector('.layout').classList.toggle('history-mode',historyView);
+      document.getElementById('historyNav').classList.toggle('active',historyView);document.getElementById('conversationNav').classList.toggle('active',!historyView);
+    }
+    function materializeContinuation(data){
+      if(!data.continuation_state_id)return data;
+      const summary=data.agent_report?.summary||{};
+      return {...data,output_state_id:data.continuation_state_id,agent_report:data.agent_report?{...data.agent_report,summary:{...summary,inserted:(summary.inserted||0)+data.continuation_summary.inserted,remaining:data.continuation_summary.remaining},coverage:data.continuation_coverage||data.agent_report.coverage,pending_time_relaxation:null}:data.agent_report};
+    }
+    async function refreshPendingWork(runId){
+      const response=await fetch('/api/runs/'+encodeURIComponent(runId),{cache:'no-store'});const data=await response.json();if(!response.ok)throw Error(data.error?.message||'无法读取接续待办');
+      const current=materializeContinuation(data);renderResult(current);
+      document.getElementById('progressLabel').textContent=`已保存当前确认结果，剩余 ${current.agent_report?.summary?.remaining??'待核'} 门；待办已接续，不重新运行队列。`;
+    }
+    function openHistoryForWork(data){
+      showWorkspace('conversation');const current=materializeContinuation(data);if(current.chat_report){activateState(current.output_state_id,(current.run_dir||'').split('/').pop());renderScheduleChat(current);return;}renderResult(current);
+      agentPreviousRun='';agentContext=current.agent_report?.goal||'';document.getElementById('continueState').checked=true;document.getElementById('planner').value='agent';syncState();syncAction();
+    }
+    async function loadRunHistory(){
+      showWorkspace('history');const list=document.getElementById('historyList');list.replaceChildren();list.textContent='正在读取运行记录…';
+      try{const response=await fetch('/api/runs',{cache:'no-store'});const payload=await response.json();if(!response.ok||!payload.ok)throw Error('读取失败');list.replaceChildren();
+        if(!payload.runs.length){list.textContent='当前还没有运行记录。';return;}
+        payload.runs.forEach(run=>{const card=document.createElement('article');card.className='result-card';const title=document.createElement('strong');title.textContent=`${run.run_id} · ${run.status==='needs_input'?'待确认或补充':run.status==='cancelled'?'已中止':run.ok?'已完成':'需处理'}`;const detail=document.createElement('p');detail.className='details';detail.textContent=`工具：${(run.tools||[]).join(' → ')||'无'}；原输出版本：${run.output_state_id||'未保存'}${run.continuation_state_id&&run.continuation_state_id!==run.output_state_id?'；确认后版本：'+run.continuation_state_id:''}`;const inspect=document.createElement('button');inspect.className='history';inspect.textContent='查看运行详情';inspect.addEventListener('click',()=>loadHistoryDetail(run.run_id));card.append(title,detail,inspect);list.append(card);});
+      }catch(error){list.textContent='读取运行记录失败：'+error.message;}
+    }
+    async function loadHistoryDetail(runId){
+      const target=document.getElementById('historyDetail');target.hidden=false;target.replaceChildren();target.textContent='正在读取详情…';
+      try{const response=await fetch('/api/runs/'+encodeURIComponent(runId),{cache:'no-store'});const data=await response.json();if(!response.ok)throw Error('读取失败');target.replaceChildren();
+        const title=document.createElement('h2');title.textContent=runId;target.append(title);const s=data.agent_report?.summary||data.final_response?.result?.summary||{};
+        const summary=document.createElement('p');summary.textContent=`运行原始结果：新排入 ${s.inserted??'待核'} 门，移动 ${s.moved??0} 门，剩余 ${s.remaining??'待核'} 门。`;target.append(summary);
+        if(data.continuation_state_id){const saved=document.createElement('p');saved.textContent=`后续确认已保存：另排入 ${data.continuation_summary.inserted} 门，当前剩余 ${data.continuation_summary.remaining} 门，版本 ${data.continuation_state_id}。`;target.append(saved);}
+        const rounds=document.createElement('ol');(data.agent_report?.rounds||[]).forEach(row=>{const line=document.createElement('li');line.textContent=`${row.tool} · ${row.outcome||''} · ${row.reason||''}${row.error?' · '+row.error:''}`;rounds.append(line);});target.append(rounds);
+        const liveResponse=await fetch('/api/jobs/'+encodeURIComponent(runId),{cache:'no-store'});if(liveResponse.ok){const live=await liveResponse.json();const logs=document.createElement('pre');logs.style.whiteSpace='pre-wrap';logs.textContent=(live.logs||[]).map(row=>`${row.timestamp||''} ${row.message}`).join('\n');target.append(logs);}
+        if(data.output_state_id){const use=document.createElement('button');use.className='history';use.textContent='在排课对话中处理此版本待办';use.addEventListener('click',()=>openHistoryForWork(data));target.append(use);}
+        target.scrollIntoView({behavior:'smooth',block:'start'});
+      }catch(error){target.textContent='读取详情失败：'+error.message;}
+    }
+    document.getElementById('conversationNav').addEventListener('click',()=>showWorkspace('conversation'));
+    document.getElementById('historyBack').addEventListener('click',()=>showWorkspace('conversation'));
+    document.getElementById('historyNav').addEventListener('click',loadRunHistory);
+    document.getElementById('historyTop').addEventListener('click',()=>document.getElementById('historyNav').click());
+    function appendAgentSettings(form){
+      const values={agent_max_moves:'agentMaxMoves',agent_max_rounds:'agentMaxRounds',agent_movable_ids:'agentMovableIds',agent_locked_ids:'agentLockedIds',agent_weight_time_preference:'weightPreference',agent_weight_evening:'weightEvening',agent_weight_weekend:'weightWeekend'};
+      Object.entries(values).forEach(([name,id])=>form.append(name,document.getElementById(id).value));
+      form.append('agent_process_all',document.getElementById('agentProcessAll').checked?'true':'false');
+      form.append('agent_choose_movable',document.getElementById('agentChooseMovable').checked?'true':'false');
+      form.append('agent_context',agentContext);
+      form.append('agent_resume_run_id',agentPreviousRun);
+    }
+    function humanExplanation(value){const text=value||'';return text.includes('independent acceptance failed:')?text.split('independent acceptance failed:')[0]+'仍有课程的课时或授课周与源数据不一致，完整证据保存在验收记录中。':text;}
+    function continueAllRemaining(data,button){
+      if(!data.output_state_id)return;
+      activateState(data.output_state_id,(data.run_dir||'').split('/').pop());
+      agentPreviousRun=data.agent_report?.coverage?.unfinished?(data.run_dir||'').split('/').pop():'';
+      document.getElementById('continueState').checked=true;
+      document.getElementById('taskAction').value='repair';document.getElementById('planner').value='agent';
+      document.getElementById('agentProcessAll').checked=true;
+      document.getElementById('prompt').value=data.agent_report?.coverage?data.agent_report.goal:'处理全部未排课程，按失败原因分批接续，保留成功安排；人数、教室和课程禁排候选等待确认。';
+      syncState();syncAction();
+      if(button)button.disabled=true;
+      document.getElementById('chatForm').requestSubmit();
+    }
+    function coverageSummary(report){
+      const coverage=report.coverage,c=coverage.counts,total=Object.keys(coverage.courses).length;
+      return `已检查 ${total-c.queued}/${total} 门；资源方案待确认 ${c.waiting_resource} 门，资料待补充 ${c.waiting_data} 门，课程禁排待确认 ${c.waiting_time} 门，尝试后未排入 ${c.failed} 门，尚有检查步骤待执行 ${c.queued} 门。${c.waiting_resource+c.waiting_data+c.waiting_time?'请在聊天区处理待办；候选未确认保存前不计入排入数量。':''}`;
+    }
+    function agentCompletionText(data){
+      const report=data.agent_report||{},s=report.summary||{},coverage=report.coverage;
+      if(coverage)return `${coverage.unfinished?'本轮暂停，仍有检查步骤待执行':'本轮自动检查已完成'}：本次排入 ${s.inserted||0} 门，移动 ${s.moved||0} 门，剩余 ${s.remaining||0} 门。${coverageSummary(report)}`;
+      return `本轮处理结束：本次排入 ${s.inserted||0} 门，移动 ${s.moved||0} 门，剩余 ${s.remaining??'请查看当前版本'} 门。${report.explanation||''}`;
+    }
+    function renderPendingOverview(data){
+      const c=data.pending_counts||data.agent_report?.coverage?.counts,runId=(data.run_dir||'').split('/').pop();
+      if(!c||!runId||!(c.waiting_time+c.waiting_data+c.waiting_resource))return;
+      const bubble=askInChat('pending-overview:'+runId,'本轮检查已结束，以下课程仍需要你的操作：');
+      for(const [count,label,prefix] of [[c.waiting_time,'门课程禁排候选待确认','time-review-'],[c.waiting_data,'门课程资料待补充','one-off-review-'],[c.waiting_resource,'门资源方案待核对','resource-review-']]){
+        if(!count)continue;
+        const button=document.createElement('button');button.className='history';button.textContent=`查看 ${count} ${label}`;
+        button.addEventListener('click',()=>{const section=document.getElementById(prefix+runId);if(section)section.scrollIntoView({behavior:'smooth',block:'start'});else notify('该组待办尚在载入，请稍候或重新打开运行详情');});bubble.append(button);
+      }
+    }
+    async function renderPendingReview(target,data){
+      const report=data.agent_report||{},runId=(data.run_dir||'').split('/').pop();
+      if(!runId||(!report.pending_time_relaxation&&!report.coverage?.counts?.waiting_time&&!report.coverage?.counts?.waiting_data&&!report.coverage?.counts?.waiting_resource))return;
+      const ask=askInChat('pending-inputs:'+runId,'本轮需要你确认或补充的课程');ask.classList.add('pending-input-review');
+      const loading=document.createElement('p');loading.textContent='正在读取禁排候选和缺少的资料…';ask.append(loading);
+      try{
+        const response=await fetch('/api/pending-review?'+new URLSearchParams({run_id:runId}),{cache:'no-store'});const payload=await response.json();if(!response.ok||!payload.ok)throw Error(payload.error?.message||'读取待办失败');
+        const view=payload.review;data.pending_counts=view.counts||data.pending_counts;data.continuation_state_id=view.state_id;loading.remove();
+        const disablePendingButtons=disabled=>ask.querySelectorAll('button').forEach(button=>button.disabled=disabled);
+        if(view.handled){ask.append(document.createTextNode(view.message));const followup=document.createElement('button');followup.className='history';followup.textContent='从已保存的新版本继续检查';followup.addEventListener('click',()=>continueAllRemaining({...data,output_state_id:view.followup_state_id,agent_report:{goal:report.goal}},followup));ask.append(followup);return;}
+      if(!view.pending_time&&!view.data_courses.length&&!view.affected_time_ids?.length){ask.remove();renderPendingOverview(data);return;}
+      if(view.affected_time_ids?.length){const note=document.createElement('p');note.textContent='仅以下候选受新安排影响，需要单独重新试排：'+view.affected_time_ids.join('、')+'。其他待办保持。';ask.append(note);}
+      const pending=view.pending_time;
+      if(pending){
+        const heading=document.createElement('h3');heading.id='time-review-'+runId;heading.textContent=`${pending.courses.filter(row=>row.requires_time_confirmation).length} 门课程禁排候选待确认`;ask.append(heading);const form=document.createElement('form');form.className='time-confirmation-form';const note=document.createElement('p');note.textContent='请选择接受的课程禁排候选。未勾选课程继续未排；其余严格/同一天/工作日候选随本次保存。';form.append(note);
+        const checks=[];
+        pending.courses.filter(row=>row.requires_time_confirmation).forEach(row=>{const label=document.createElement('label');label.style.display='block';const check=document.createElement('input');check.type='checkbox';check.value=row.course_id;checks.push(check);label.append(check,document.createTextNode(`${row.course_id} ${row.course_name||''}；原课程禁排：${row.original_course_unavailable||'见逐行时间规则'}；候选安排：${(row.after||[]).map(p=>`周${'一二三四五六日'[p.day]} ${p.periods.join(',')}节`).join('；')}`));form.append(label);});
+        const button=document.createElement('button');button.textContent='确认选择并保存候选';button.type='submit';form.append(button);
+        form.addEventListener('submit',async event=>{event.preventDefault();if(currentJobId){notify('请先等待当前任务完成');return;}disablePendingButtons(true);try{if(activeStateId&&activeStateId!==view.state_id)throw Error('当前课表已改变，请从新版本重新检查待办');const body=new FormData();body.append('run_id',pending.run_id);body.append('proposal_hash',pending.proposal_hash);body.append('accepted_ids',JSON.stringify(checks.filter(c=>c.checked).map(c=>c.value)));body.append('confirmed','true');const response=await fetch('/api/time-review',{method:'POST',body});const result=await response.json();if(!response.ok||!result.ok)throw Error(result.error?.message||'保存失败');activateState(result.output_state_id,pending.run_id);ask.remove();addMessage(`已保存 ${result.summary.inserted} 门，仍未排 ${result.summary.remaining} 门。其余待办已保留，正在接续，无需重新运行完整队列。`);await refreshPendingWork(pending.run_id);}catch(error){notify(error.message);disablePendingButtons(false);}});ask.append(form);
+      }
+
+        if(view.data_courses.length){
+          const heading=document.createElement('h3');heading.id='one-off-review-'+runId;heading.textContent=`${view.data_courses.length} 门课程资料待补充`;ask.append(heading);
+          const note=document.createElement('p');note.className='details';note.textContent='这些课程尚未进入普通补排。周课时为0、总课时为2的课程，需要明确只在哪一周上课。请选择已核实的授课周；不选的课程继续等待。原Excel不修改，新版本记录你确认的一次性计划。';ask.append(note);
+          const form=document.createElement('form');form.className='one-off-week-form';const entries=[];
+          view.data_courses.forEach(row=>{const box=document.createElement('div');box.className='result-card';const title=document.createElement('p');title.textContent=`${row.course_id} ${row.course_name}：${row.message}`;box.append(title);
+            if(row.kind==='one_off_week'){const select=document.createElement('select');select.setAttribute('aria-label',`${row.course_id} 的明确授课周`);const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='尚未确认，请选择授课周';select.append(placeholder);row.allowed_weeks.forEach(week=>{const option=document.createElement('option');option.value=String(week);option.textContent=`第 ${week} 周（只在本周上 ${row.total_hours} 节）`;select.append(option);});box.append(select);entries.push({row,select});}form.append(box);
+          });
+          if(entries.length){const button=document.createElement('button');button.type='submit';button.textContent='确认所选授课周并试排';form.append(button);
+            form.addEventListener('submit',async event=>{event.preventDefault();const decisions=entries.filter(e=>e.select.value).map(e=>({course_id:e.row.course_id,teaching_week:Number(e.select.value)}));if(!decisions.length){notify('请先选择已核实的授课周');return;}if(currentJobId){notify('请先等待当前任务完成');return;}if(activeStateId&&activeStateId!==view.state_id){notify('当前课表已改变，请从新版本重新检查待办');return;}disablePendingButtons(true);const waiting=addMessage(`正在保存 ${decisions.length} 门明确授课周并试排…`);try{const formData=new FormData();formData.append('source_run_id',runId);formData.append('basis_token',view.basis_token);formData.append('decisions',JSON.stringify(decisions));formData.append('confirmed','true');const response=await fetch('/api/one-off-review',{method:'POST',body:formData});let next=await response.json();if(!response.ok)throw Error(next.error?.message||'提交失败');localStorage.setItem('timetableInitialJob',next.job_id);next=await waitForInitial(next.job_id,waiting);if(!next.ok)throw Error(next.error?.message||'补充授课周未通过');ask.remove();waiting.textContent=next.agent_report?.explanation||'授课周已保存';await refreshPendingWork(runId);}catch(error){waiting.textContent=error.message;disablePendingButtons(false);}});
+          }
+          ask.append(form);
+        }
+        pointToChat(target,'课程禁排候选和资料补充表已发送到左侧聊天，请在那里逐课处理。');renderPendingOverview(data);scrollChat();
+      }catch(error){loading.textContent='待办读取失败：'+error.message;ask.append(loading);}
+    }
+    function renderAgentReport(target,data){
+      const report=data.agent_report;
+      const coverage=report.coverage;
+      if(coverage){
+        const totals=document.createElement('p');totals.className='details';const c=coverage.counts;
+        totals.textContent=`本任务已排入 ${c.scheduled} 门；剩余 ${coverage.remaining} 门：资源待确认 ${c.waiting_resource}，资料待补充 ${c.waiting_data}，禁排待确认 ${c.waiting_time}，尝试后未排入 ${c.failed}，尚有步骤待执行 ${c.queued}（未开始 ${coverage.unattempted}）。`;
+        target.append(totals);
+        const details=document.createElement('details'),label=document.createElement('summary');label.textContent='查看全部课程处理状态';details.append(label);
+        const names={scheduled:'已排入',waiting_resource:'资源待确认',waiting_data:'资料待补充',waiting_time:'禁排待确认',failed:'尝试后暂未排入',queued:'尚有处理步骤'};
+        Object.values(coverage.courses).forEach(row=>{const line=document.createElement('p');line.className='details';line.textContent=`${row.course_id} · ${names[row.status]||row.status} · 已尝试 ${row.attempts.length} 步${row.reason?' · '+row.reason:''}`;details.append(line);});target.append(details);
+      }
+      if(data.output_state_id&&!report.pending_time_relaxation&&(coverage?.remaining||!coverage)){
+        const button=document.createElement('button');button.className='history';button.textContent=coverage?.unfinished?'从断点继续处理全部未排课程':'重新检查并处理全部未排课程';button.addEventListener('click',()=>continueAllRemaining(data,button));target.append(button);
+      }
+      const explanation=document.createElement('p');explanation.className='details';explanation.textContent=coverage?coverageSummary(report):humanExplanation(report.explanation||report.scope);target.append(explanation);
+      const levels={strict:'严格',same_day:'同一天',weekdays:'工作日',course_unavailable:'课程禁排（待确认）'};
+      (report.time_relaxations||[]).forEach(row=>{const line=document.createElement('p');line.className='details';line.textContent=`${row.course_id} ${row.course_name||''}：${levels[row.relaxation_level]||row.relaxation_level||'严格'}${row.requires_time_confirmation?' · 尚未保存，需确认':''}${row.block_limit_adjustment?` · 每日最多 ${row.block_limit_adjustment.max_blocks_per_day} 块，每周上限 ${row.block_limit_adjustment.max_weekly_hours} 节（仅本课）`:''}`;target.append(line);});
+      renderPendingReview(target,data);
+      (report.resource_failures||[]).forEach(row=>{const item=document.createElement('p');item.className='details';item.textContent=`未排入 ${row.course_id} ${row.course_name||''}：${row.reason}（${row.status}）`;target.append(item);});
+      (report.movement_diagnostics||[]).forEach(row=>{const detail=document.createElement('details');const heading=document.createElement('summary');heading.textContent=`${row.course_id} ${row.course_name||''} · 占用诊断`;detail.append(heading);const core=document.createElement('p');core.className='details';core.textContent=`诊断状态：${row.explanation_status}；冲突核心：${(row.core_ids||[]).map(s=>s.replace('occupancy:','')).join('、')||'未得到明确核心'}。`;detail.append(core);(row.candidate_examples||[]).forEach(example=>{const text=document.createElement('p');text.className='details';text.textContent=`候选：${example.placements.map(p=>`周${'一二三四五六日'[p.day]}第${p.periods.join('、')}节，教室${p.room_id}，第${p.weeks.join('、')}周`).join('；')}；占用课程：${example.blocking_course_ids.join('、')||'无'}。`;detail.append(text);});target.append(detail);});
+      (report.changes||[]).filter(row=>row.operation==='move').forEach(row=>{const text=document.createElement('p');text.className='details';const format=placements=>(placements||[]).map(p=>`周${'一二三四五六日'[p.day]} ${p.periods.join('、')}节 ${p.room_id}（第${p.weeks.join('、')}周）`).join('；');text.textContent=`移动 ${row.course_id} ${row.course_name||''}：${format(row.before)} → ${format(row.after)}`;target.append(text);});
+      if(data.room_review?.failures?.length){
+        const repairArea=document.createElement('div');const note=document.createElement('p');note.className='details';note.textContent='保持此前已接受的人数和具体教室，先诊断占用，再联合调课；旧课必须完整排回。不更换教室，不扩大晚间、周末或课程禁排授权。';repairArea.append(note);
+        const label=document.createElement('label');label.textContent='本次最多移动已有课程数：';const cap=document.createElement('input');cap.type='number';cap.min='1';cap.max='30';cap.value='10';label.append(cap);repairArea.append(label);
+        const button=document.createElement('button');button.className='history';button.textContent='按已接受方案诊断并联合调课';repairArea.append(button);target.append(repairArea);
+        button.addEventListener('click',async()=>{if(currentJobId){notify('请先等待当前任务完成');return;}const maximum=Number(cap.value);if(!Number.isInteger(maximum)||maximum<1||maximum>30){notify('移动上限须为1–30门');return;}button.disabled=true;const waiting=addMessage(`保持已接受资源方案，诊断占用并联合试排；本次最多移动 ${maximum} 门。`);try{const form=new FormData();form.append('accepted_run_id',data.accepted_resource_run_id||(data.run_dir||'').split('/').pop());form.append('max_moved_courses',String(maximum));form.append('confirmed','true');const response=await fetch('/api/room-review-repair',{method:'POST',body:form});let next=await response.json();if(!response.ok)throw Error(next.error?.message||'提交失败');localStorage.setItem('timetableInitialJob',next.job_id);next=await waitForInitial(next.job_id,waiting);if(!next.ok)throw Error(next.error?.message||'调课未通过');waiting.textContent=next.agent_report?.explanation||'联合调课完成';if(next.resource_followup)renderResult(next);else if(next.pending_source_run_id)await refreshPendingWork(next.pending_source_run_id);else renderResult(next);}catch(error){waiting.textContent=error.message;button.disabled=false;}});
+      }
+      const timeline=document.createElement('ol');
+      (report.rounds||[]).forEach(round=>{const item=document.createElement('li');item.textContent=`${round.round?`第 ${round.round} 轮 · `:''}${round.tool} · ${round.outcome||'已选择'}：${round.reason||''}${round.error?` · 检查未通过：${round.error}`:''}`;timeline.append(item);});target.append(timeline);
+      if(report.questions?.length&&!report.data_questions?.length){
+        const runId=(data.run_dir||'').split('/').pop();
+        const ask=askInChat('agent-questions:'+runId,'AI 助手需要你补充以下信息后才能继续：');
+        const list=document.createElement('ol');report.questions.forEach(question=>{const item=document.createElement('li');item.textContent=question;list.append(item);});ask.append(list);
+        const hint=document.createElement('span');hint.className='sub';hint.textContent='直接在下方输入框回答并发送，将从当前版本继续 AI 多轮处理。';ask.append(hint);
+        // Prepare the composer so the reply continues the same agent task.
+        document.getElementById('taskAction').value='repair';document.getElementById('planner').value='agent';syncAction();scrollChat();
+        pointToChat(target,`需要补充 ${report.questions.length} 项信息，请在左侧对话中回答。`);
+      }
+      (report.candidates||[]).forEach(candidate=>{const item=document.createElement('p');item.className='details';item.textContent=`比较候选 ${candidate.candidate_id}：移动预算 ${candidate.movement_budget}，排入 ${candidate.inserted}，移动 ${candidate.moved}，质量代价 ${candidate.quality}（越低越好；${candidate.selected?'已选择':'未选择'}；应用以版本变化为准）。`;target.append(item);});
+      const delta=document.createElement('p');delta.className='details';delta.textContent=`新增教学班：${(report.delta?.inserted_ids||[]).join('、')||'无'}\n移动教学班：${(report.delta?.moved_ids||[]).join('、')||'无'}\n状态：${data.status}；版本 ${data.input_state_id||''} → ${data.output_state_id||''}`;target.append(delta);
+    }
+    function appendAiSettings(form){
+      form.append('dashscope_base_url',document.getElementById('aiBaseUrl').value.trim());
+      form.append('dashscope_model',document.getElementById('aiModel').value.trim());
+      form.append('dashscope_api_key',document.getElementById('aiApiKey').value.trim());
+    }
+    document.getElementById('saveAiSettings').addEventListener('click',async()=>{
+      const button=document.getElementById('saveAiSettings'),status=document.getElementById('aiConnectionStatus');
+      button.disabled=true;status.textContent='正在保存配置…';
+      try{const form=new FormData();appendAiSettings(form);const response=await fetch('/api/ai/settings',{method:'POST',body:form});const data=await response.json();if(data.ok){document.getElementById('aiApiKey').value='';await checkService();}status.textContent=data.ok?data.message:(data.error?.message||'保存失败');}
+      catch{status.textContent='保存失败，请检查本机服务连接。';}
+      finally{button.disabled=false;}
+    });
+    document.getElementById('testAiConnection').addEventListener('click',async()=>{
+      const button=document.getElementById('testAiConnection'),status=document.getElementById('aiConnectionStatus');
+      button.disabled=true;status.textContent='正在测试连接…';
+      try{const form=new FormData();appendAiSettings(form);const response=await fetch('/api/ai/test',{method:'POST',body:form});const data=await response.json();status.textContent=data.ok?data.message:(data.error?.message||'连接失败');if(data.ok){document.getElementById('serviceText').textContent='本机服务已连接 · 网页 AI 配置可用';}}
+      catch{status.textContent='无法连接本机服务，请检查服务是否启动。';}
+      finally{button.disabled=false;}
+    });
+    document.getElementById('clearAiSettings').addEventListener('click',()=>{
+      ['aiBaseUrl','aiModel','aiApiKey'].forEach(id=>document.getElementById(id).value='');
+      document.getElementById('aiConnectionStatus').textContent='已清空输入；已保存的服务端配置仍会使用。';checkService();
+    });
+    async function checkService(){try{const res=await fetch('/api/health',{cache:'no-store'});const data=await res.json();if(!res.ok||!data.ok)throw Error();document.getElementById('aiBaseUrl').placeholder=data.ai_defaults?.base_url||'留空使用服务端默认地址';document.getElementById('aiModel').placeholder=data.ai_defaults?.model||'留空使用服务端默认模型';document.getElementById('aiApiKey').placeholder=data.llm_available?'Key 已配置，留空即可；填写可替换':'首次填写 Key 后点击保存并应用';if(!document.getElementById('aiConnectionStatus').textContent)document.getElementById('aiConnectionStatus').textContent=data.ai_settings_saved?'本机已保存 AI 配置，刷新或重启无需重填。':data.llm_available?'服务端环境变量已配置 Key。':'尚未配置 Key。';document.getElementById('statusDot').classList.add('online');document.getElementById('serviceText').textContent=data.llm_available?'本机服务已连接 · AI 可用':'本机服务已连接 · 规则规划';}catch{document.getElementById('serviceText').textContent='本机服务未连接';document.getElementById('modeBadge').textContent='等待本机服务';}}
+    function renderResult(data){if(data.chat_report){renderScheduleChat(data);return;}queueMicrotask(()=>renderRemainingReview(document.getElementById("runResult"),data));applyResultSelection(data);document.getElementById('runId').textContent=data.status==='cancelled'?'已中止':data.agent_report?.coverage?.unfinished?'本轮暂停':data.status==='needs_input'?'待确认':data.ok?'已结束':'需处理';const target=document.getElementById('runResult');document.getElementById('emptyRun').hidden=true;target.hidden=false;target.innerHTML='';const ok=data.ok;const title=document.createElement('div');title.className=ok?'result-title':'error';title.textContent=data.status==='cancelled'?'任务已中止':data.status==='needs_input'?'需要补充信息':data.agent_report?'AI 多轮处理结果':ok?'候选方案已生成':'本次运行需要处理';target.append(title);if(data.planning_assumptions?.conditional_only||data.agent_report?.planning_assumptions?.conditional_only){const condition=document.createElement('p');condition.className='class-evidence';condition.textContent='人数假设条件候选：尚需核实当前选课人数；后续续排保留这一条件，不作为已确认人数或正式发布。';target.append(condition);}if(data.automatic_reschedule){const stage=document.createElement('div');stage.className='details';stage.textContent=data.automatic_reschedule.status==='completed'?`首排版本 ${data.initial_state_id} → 原引擎调课版本 ${data.output_state_id}`:data.automatic_reschedule.status==='failed'?`自动调课未通过，已保留首排版本 ${data.initial_state_id}。原因：${data.automatic_reschedule.error?.message||'请查看运行记录'}`:'首排已无剩余课程，自动跳过调课。';target.append(stage);if(data.initial_state_id){const initial=document.createElement('a');initial.className='history';initial.href=`/api/states/${encodeURIComponent(data.initial_state_id)}/schedule.xlsx`;initial.textContent='下载首排根版本课表';target.append(initial)}}if(data.input_validation){const validation=document.createElement('div');validation.className='details';validation.textContent=`教师编号核对：课程表 ${data.input_validation.course_teacher_ids} 个 / 教师表 ${data.input_validation.teacher_table_ids} 个；未匹配 ${data.input_validation.unmatched_teacher_ids} 个。输入文件哈希已写入本次输入清单。`;target.append(validation)}(data.input_warnings||[]).forEach(message=>{const warning=document.createElement('div');warning.className='details';warning.textContent=`⚠ ${message}`;target.append(warning)});if(ok){const final=data.final_response?.result||{};const summary=final.summary||final.proposal?.summary||{};const stats=document.createElement('div');stats.className='result-stats';[['已排入',summary.inserted??summary.placed??'—'],['仍未排入',summary.remaining??summary.unplaced??'—'],['工具调用',data.tool_calls??0]].forEach(([name,value])=>{const item=document.createElement('div');item.className='result-stat';const b=document.createElement('b');b.textContent=value;item.append(b,document.createTextNode(name));stats.append(item)});target.append(stats);const audit=document.createElement('div');audit.className='details';audit.textContent=`计划工具：${(data.plan?.selected_tools||[]).join(' → ')||'无'}\n运行记录：${data.run_dir||''}\n课表版本：${data.output_state_id||'无'}`;target.append(audit);if(data.output_state_id){const link=document.createElement('a');link.className='history';link.href=`/api/states/${encodeURIComponent(data.output_state_id)}/schedule.xlsx`;link.textContent='下载此版本课表 Excel';target.append(link);const remaining=document.createElement('a');remaining.className='history';remaining.href=`/api/states/${encodeURIComponent(data.output_state_id)}/remaining.xlsx`;remaining.textContent='下载剩余课程清单';target.append(remaining)}if(final.courses?.length){const list=document.createElement('ul');final.courses.slice(0,8).forEach(course=>{const li=document.createElement('li');li.textContent=`${course.course_id||course.jxbid||'课程'}：${course.status||'已处理'}${course.reason?` · ${course.reason}`:''}`;list.append(li)});target.append(list)}}else{const error=document.createElement('div');error.className='details';error.textContent=data.error?.message||data.final_response?.error?.message||'请检查文件格式和输入参数。';target.append(error)}if(data.resume?.allowed){const resume=document.createElement('button');resume.className='history';resume.textContent='从最后保存版本续接';resume.addEventListener('click',()=>resumeInterrupted(data.resume.source_run_id,resume));target.append(resume)}if(!ok&&data.output_state_id&&!data.agent_report){for(const artifact of ['schedule','remaining']){const link=document.createElement('a');link.className='history';link.href=`/api/states/${encodeURIComponent(data.output_state_id)}/${artifact}.xlsx`;link.textContent=artifact==='schedule'?'下载已恢复课表':'下载剩余课程';target.append(link)}}if(data.agent_report){if(!ok&&data.output_state_id){for(const artifact of ['schedule','remaining']){const link=document.createElement('a');link.className='history';link.href=`/api/states/${data.output_state_id}/${artifact}.xlsx`;link.textContent=artifact==='schedule'?'下载最后成功版本课表':'下载剩余课程';target.append(link);}}renderAgentReport(target,data);}renderDataCompletion(target,data);renderHourReview(target,data);}
+    async function renderDataCompletion(target,data){
+      const runId=(data.run_dir||'').split('/').pop();
+      const basis=data.data_basis||(runId&&/^[0-9]{8}T[0-9]{6}Z-[a-f0-9]{8}$/.test(runId)?{run_id:runId}:data.output_state_id?{state_id:data.output_state_id}:null);
+      if(!basis)return;
+      const panel=document.createElement('div');panel.className='result-card';target.append(panel);
+      const status=document.createElement('p');status.className='details';status.textContent='正在检查已排及未排课程的教师身份…';panel.append(status);
+      try{
+        const response=await fetch('/api/data-check?'+new URLSearchParams(basis),{cache:'no-store'});const payload=await response.json();
+        if(!response.ok||!payload.ok){status.textContent='教师身份检查未完成：'+(payload.error?.message||'请查看运行记录');return;}
+        const scan=payload.inspection;status.textContent=`已检查 ${scan.checked_source_rows} 条课程教师记录；需要补齐或核实 ${scan.issue_count} 条。`;
+        if(data.data_completion?.saved){const identities=document.createElement('p');identities.className='details';identities.textContent='已补齐：'+(data.data_completion.audit?.human_answers||[]).map(a=>`${a.course_name||a.course_id} · 第${a.source_row}行 · ${a.supplied_teacher_id} ${a.supplied_teacher_name}`).join('；');panel.append(identities);const note=document.createElement('p');note.className='details';note.textContent=data.data_completion.validation?.valid?'补齐后的数据已复查并保存为新版本。':'补充信息已保存为修正草稿；整表仍有其他阻塞，暂未继续计算。';panel.append(note);
+          for(const [kind,label] of [['courses','下载修正课程表'],['teachers','下载修正教师表'],['schedule','下载当前候选课表'],['remaining','下载未排清单']]){const a=document.createElement('a');a.className='history';a.textContent=label;a.href=`/api/completions/${encodeURIComponent(runId)}/${kind}.xlsx`;panel.append(a);}}
+        if(!scan.issues.length)return;
+        pointToChat(panel,'需要补齐的教师信息已发到左侧对话，请在对话中填写。');
+        const ask=askInChat('teacher-identity:'+(runId||JSON.stringify(basis)),`有 ${scan.issue_count} 条课程教师信息需要你补齐或核实，填写后系统会复查并继续原任务：`);
+        const form=document.createElement('form');const entries=[];
+        scan.issues.slice(0,100).forEach(issue=>{const box=document.createElement('div');box.className='result-card';const title=document.createElement('p');title.className='details';title.textContent=issue.question;box.append(title);
+          const id=document.createElement('input');id.type='text';id.placeholder='教师编号';id.value=issue.teacher_id||'';id.setAttribute('aria-label','教师编号');
+          const name=document.createElement('input');name.type='text';name.placeholder='教师姓名';name.value=issue.teacher_name||'';name.setAttribute('aria-label','教师姓名');
+          const label=document.createElement('label');const register=document.createElement('input');register.type='checkbox';label.append(register,document.createTextNode('该编号尚未登记，同意新增到教师表'));
+          box.append(id,name,label);form.append(box);entries.push({issue,id,name,register});});
+        if(scan.issues.length>100){const note=document.createElement('p');note.textContent='本页先显示100条，保存后继续处理其余问题。';form.append(note);}
+        const submit=document.createElement('button');submit.type='submit';submit.className='history';submit.textContent='保存补充信息、复查并继续';form.append(submit);ask.append(form);scrollChat();
+        form.addEventListener('submit',async event=>{event.preventDefault();const selected=entries.filter(e=>e.id.value.trim()&&e.name.value.trim());if(!selected.length){notify('请填写至少一条完整的教师编号和姓名');return;}
+          const answers=selected.map(e=>({issue_id:e.issue.issue_id,teacher_id:e.id.value.trim(),teacher_name:e.name.value.trim(),register_teacher:e.register.checked}));submit.disabled=true;
+          const waiting=addMessage('正在保存教师信息、重建占用并复查；通过后继续原任务…');
+          try{const post=new FormData();post.append('basis',JSON.stringify(basis));post.append('basis_token',scan.basis_token);post.append('answers',JSON.stringify(answers));appendAiSettings(post);
+            const reply=await fetch('/api/teacher-completion',{method:'POST',body:post});let next=await reply.json();if(!reply.ok)throw Error(next.error?.message||'补齐提交失败');
+            localStorage.setItem('timetableInitialJob',next.job_id);next=await waitForInitial(next.job_id,waiting);renderResult(next);
+            if(next.output_state_id){activeStateId=next.output_state_id;localStorage.setItem('timetableStateId',activeStateId);document.getElementById('continueState').checked=true;syncState();syncAction();}
+            waiting.textContent=next.agent_report?.explanation||next.error?.message||'请查看补齐结果';if(next.data_completion?.saved)form.remove();
+          }catch(error){waiting.textContent=error.message;}finally{submit.disabled=false;}});
+      }catch(error){status.textContent='无法读取教师身份检查结果，请刷新后重试。';}
+    }
+    async function resumeInterrupted(runId,button){
+      button.disabled=true;const waiting=addMessage('正在从最后保存版本续接任务…');
+      try{const form=new FormData();form.append('run_id',runId);const response=await fetch('/api/resume',{method:'POST',body:form});let data=await response.json();if(!response.ok)throw Error(data.error?.message||'续接失败');if(data.job_id){localStorage.setItem('timetableInitialJob',data.job_id);data=await waitForInitial(data.job_id,waiting);}renderResult(data);if(data.output_state_id){activeStateId=data.output_state_id;localStorage.setItem('timetableStateId',activeStateId);document.getElementById('continueState').checked=true;document.getElementById('taskAction').value='repair';syncState();syncAction();}waiting.textContent=data.ok?'续接任务已结束，结果与新版本已保存。':`续接需要处理：${data.error?.message||'请查看结果'}`;}
+      catch(error){waiting.textContent=error.message;}finally{button.disabled=false;}
+    }
+    async function renderHourReview(target,data){
+      const rid=(data.run_dir||'').split('/').pop();
+      const basis=data.output_state_id?{state_id:data.output_state_id}:data.data_basis||(rid?{run_id:rid}:null);
+      if(!basis)return;
+      const panel=document.createElement('div');panel.className='result-card';const heading=document.createElement('strong');heading.textContent='周计划差异处理（当前口径）';panel.append(heading);const note=document.createElement('p');note.className='details';note.textContent='正在核对周安排差异…';panel.append(note);target.prepend(panel);
+      try{const form=new FormData();form.append('basis',JSON.stringify(basis));form.append('request','查看验收差异');
+        const response=await fetch('/api/acceptance/explain',{method:'POST',body:form});const payload=await response.json();if(!response.ok||!payload.ok)throw Error(payload.error?.message||'检查失败');
+        const review=payload.report.review;note.textContent=`周计划差异 ${review.difference_count} 门 · 待选择 ${review.pending_count} 门。LLXS差异不阻塞。`;
+        if(!review.hard_validation.valid){const detail=document.createElement('p');detail.className='details';detail.textContent='还有其他约束未通过：'+review.hard_validation.message;panel.append(detail);return;}
+        if(review.already_accepted){note.textContent+=' 当前版本的决定已保存，可继续原任务。';return;}
+        if(!review.difference_count)return;
+        // A pending decision is a question for the user: move the form into the chat.
+        const ask=askInChat('hour-review:'+JSON.stringify(basis),`有 ${review.difference_count} 门课的实际周课时与源表周计划不一致，需要你选择接受当前安排或局部重排：`);
+        ask.append(panel);pointToChat(target,`周计划差异 ${review.difference_count} 门，需要你在左侧对话中选择处理方式。`);
+        const entries=[];review.differences.slice(0,100).forEach(row=>{const label=document.createElement('label');label.style.display='block';const check=document.createElement('input');check.type='checkbox';check.checked=false;label.append(check,document.createTextNode(`${row.course_id} ${row.course_name}：周计划合计 ${row.expected_total}，实际 ${row.actual_total}`));panel.append(label);entries.push({id:row.course_id,check});});
+        if(review.difference_count>100){const extra=document.createElement('p');extra.textContent='本页显示前100条；“接受”覆盖完整清单，可先下载全部明细。';panel.append(extra);}
+        const manualIds=document.createElement('textarea');manualIds.placeholder='也可粘贴任意差异教学班ID（逗号或换行分隔）；填写后仅调整这些ID';manualIds.setAttribute('aria-label','指定局部调整教学班');panel.append(manualIds);
+        const download=document.createElement('button');download.className='history';download.textContent='下载全部差异明细';download.addEventListener('click',()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(review.differences,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='hour-plan-differences.json';link.click();URL.revokeObjectURL(url);});panel.append(download);
+        const accept=document.createElement('button');accept.className='history';accept.textContent='接受当前安排并继续';const adjust=document.createElement('button');adjust.className='history';adjust.textContent='仅局部重排勾选课程';adjust.disabled=!entries.length;panel.append(accept,adjust);
+        async function submitDecision(decision){accept.disabled=true;adjust.disabled=true;const waiting=addMessage(decision==='accept'?'正在保存你的课时选择并续接原任务…':'正在用原排课引擎局部重排所选课程，其余课表保持原安排…');
+          try{const ids=decision==='accept'?review.differences.map(d=>d.course_id):(manualIds.value.trim()?manualIds.value.trim().split(/[\s,，;；]+/).filter(Boolean):entries.filter(e=>e.check.checked).map(e=>e.id));if(decision==='adjust'&&!ids.length)throw Error('请勾选至少一门课程');
+            const post=new FormData();post.append('basis',JSON.stringify(basis));post.append('basis_token',review.basis_token);post.append('decision',decision);post.append('course_ids',JSON.stringify(ids));post.append('confirmed','true');appendAiSettings(post);
+            const response=await fetch('/api/hour-review',{method:'POST',body:post});let next=await response.json();if(!response.ok)throw Error(next.error?.message||'提交失败');localStorage.setItem('timetableInitialJob',next.job_id);next=await waitForInitial(next.job_id,waiting);renderResult(next);waiting.textContent=next.agent_report?.explanation||next.error?.message||'请查看结果';
+          }catch(error){waiting.textContent=error.message;}finally{accept.disabled=false;adjust.disabled=!entries.length;}}
+        accept.addEventListener('click',()=>submitDecision('accept'));adjust.addEventListener('click',()=>submitDecision('adjust'));scrollChat();
+      }catch(error){note.textContent='周安排差异检查未完成：'+error.message;}
+    }
+    async function renderRemainingReview(target,data){
+      if(data.resource_followup)return;
+      if(!['repair','agent','room_review'].includes(data.plan?.intent)||(data.plan.intent!=='room_review'&&!['agent','llm'].includes(data.plan.planner)))return;
+      const runId=(data.run_dir||'').split('/').pop();
+      const basis=data.plan?.intent==='room_review'?(data.data_basis||{state_id:data.output_state_id}):runId?{run_id:runId}:null;
+      if(!basis)return;
+      const panel=document.createElement('div');panel.className='remaining-review';target.append(panel);
+      try{
+        const response=await fetch('/api/remaining-review?'+new URLSearchParams(basis),{cache:'no-store'});const payload=await response.json();
+        if(!response.ok||!payload.ok)throw Error(payload.error?.message||'读取失败');
+        const review=payload.review;if(!review.course_plans.length){panel.remove();return;}
+        const ask=askInChat('remaining-review:'+((data.run_dir||'').split('/').pop()||review.basis_token),'未排课程 · 逐课核对设置与处理建议');ask.id='resource-review-'+(data.run_dir||'').split('/').pop();
+        const summary=document.createElement('p');summary.className='details';summary.textContent=`这里只显示 ${review.course_plans.length} 门资源核对建议，不代表全部未排课程。接受后仅处理选中的资源方案；其他未排课程请使用“处理全部未排课程”。`;ask.append(summary);const allButton=document.createElement('button');allButton.className='history';allButton.textContent='处理全部未排课程';allButton.addEventListener('click',()=>continueAllRemaining(data,allButton));ask.append(allButton);
+        const batchEntries=[];
+        const batchArea=document.createElement('div');batchArea.className='review-actions';
+        const batchNote=document.createElement('p');batchNote.className='details';batchNote.textContent='批量操作接受每门课当前下拉框所选的人数和教室假设；跳过已拒绝、缺少建议或有基础数据问题的课程。按当前授权联合检查占用；失败后自动诊断、尝试时间放宽及获准的局部调课，只保存验收通过的课程，失败项逐门列原因。';ask.append(batchNote);
+        const batchButton=document.createElement('button');batchButton.className='history review-batch-accept';batchButton.textContent='全部接受当前假设并联合试排';batchArea.append(batchButton);ask.append(batchArea);
+        batchButton.addEventListener('click',async()=>{
+          if(currentJobId){notify('请先等待当前任务完成');return;}
+          const selections=batchEntries.filter(e=>!e.blocked&&e.select.value).map(e=>({course_id:e.course_id,option_id:e.select.value}));
+          if(!selections.length){notify('没有可接受的资源建议');return;}
+          const buttons=[...ask.querySelectorAll('button')],disabled=buttons.map(b=>b.disabled);buttons.forEach(b=>b.disabled=true);
+          const waiting=addMessage(`已接受当前选中的 ${selections.length} 门资源假设，正在联合试排并验收…`);
+          try{const form=new FormData();form.append('basis',JSON.stringify(basis));form.append('basis_token',review.basis_token);form.append('selections',JSON.stringify(selections));form.append('confirmed','true');appendResourceAuthorization(form);
+            const response=await fetch('/api/room-review-batch',{method:'POST',body:form});let next=await response.json();if(!response.ok)throw Error(next.error?.message||'提交失败');localStorage.setItem('timetableInitialJob',next.job_id);next=await waitForInitial(next.job_id,waiting);
+            if(!next.ok)throw Error(next.error?.message||'整批试排未通过');waiting.textContent=next.agent_report?.explanation||'整批试排完成';
+            ask.remove();if(next.output_state_id)activateState(next.output_state_id,(next.run_dir||'').split('/').pop());if(next.resource_followup)renderResult(next);else if(next.pending_source_run_id)await refreshPendingWork(next.pending_source_run_id);else renderResult(next);
+          }catch(error){waiting.textContent=error.message;buttons.forEach((b,i)=>b.disabled=disabled[i]);}
+        });
+        function refreshBatchButton(){const count=batchEntries.filter(e=>!e.blocked&&e.select.value).length;batchButton.disabled=!count;batchButton.textContent=`全部接受当前 ${count} 门假设并联合试排`;}
+        const fields=[['campus','校区'],['building','教学楼'],['room_type','教室类型'],['room','指定教室'],['historical_room','历史教室'],['capacity','课程人数需求'],['weekly_hours','源周课时']];
+        for(const item of review.course_plans){
+          const card=document.createElement('section');card.className='room-review-card';
+          const title=document.createElement('strong');title.textContent=`${item.course_name||'课程'} · ${item.course_id}`;card.append(title);
+          const status=document.createElement('div');status.className='review-status';card.append(status);
+          if(item.class_issues?.length){const p=document.createElement('p');p.className='class-evidence';p.textContent=`行政班字段 TJBJ：${item.class_source_values?.filter(Boolean).join('；')||'（空）'}\n核对结果：${(item.class_issue_explanations||item.class_issues).join('；')}\n这里需要能与班级表 BJMC 匹配的行政班名称/标识，用于学生撞课检查；不是教学班 JXBID，也不是缺少课程编号。`;card.append(p);}
+          if(item.hour_note){const p=document.createElement('p');p.className='details';p.textContent=item.hour_note+' 这不是要求你修改源周课时。';card.append(p);}
+          if(item.static_matching_rooms!==0){ask.append(card);continue;}
+          if(item.capacity_evidence?.length){const evidence=document.createElement('p');evidence.className='class-evidence';
+            evidence.textContent='容量参考（用于条件试排，不代表当前选课人数已确认）：\n'+item.capacity_evidence.map(e=>`${e.label}：${e.capacity} 人 · `+(e.peer_courses?e.peer_courses.map(p=>p.course_id).join('、'):(e.source_records||[]).map(r=>`${r.sheet} 第${r.row}行 ${r.cells?.['实际人数']||''}`).join('；'))).join('\n');card.append(evidence);}
+          if(item.campus_inventory){const evidence=document.createElement('details');const heading=document.createElement('summary');heading.textContent='查看校区和教室供给依据';evidence.append(heading);
+            const text=document.createElement('p');text.className='details';text.textContent=item.campus_review_note+'\n'+Object.entries(item.campus_inventory).map(([campus,v])=>`${campus}：${v.enabled_rooms} 间，最大 ${v.max_capacity} 座，类型 ${v.room_types.join('、')}`).join('\n');
+            if(item.campus_source_conflicts?.length)text.textContent+='\n历史源表校区与当前源校区不同：'+item.campus_source_conflicts.map(e=>e.source_campus).join('、')+'；需要核实源 SKXQ。';evidence.append(text);card.append(evidence);}
+
+          if(!item.options.length){
+            const p=document.createElement('p');p.className='class-evidence';p.textContent=`同校区启用教室最大容量 ${item.same_campus_max_capacity}，课程需求 ${item.original.capacity}。${item.capacity_shortfall?`尚差 ${item.capacity_shortfall} 个座位。`:''}按当前人数、可用历史人数及同课程容量参考，仍没有同校区教室建议；请核实具体人数、源校区或真实场地库存。`;
+            card.append(p);
+          }
+          const select=document.createElement('select');select.setAttribute('aria-label',`${item.course_id} 的建议教室`);
+          item.options.forEach(o=>{const opt=document.createElement('option');opt.value=o.option_id||o.room_id;opt.textContent=`${o.conditional_only?'人数假设 '+o.proposed.capacity+' 人 · ':''}${o.proposed.room} · ${o.proposed.room_type||'未填写类型'} · ${o.room_capacity} 座 · 相似度 ${Math.round((o.similarity?.score||0)*100)}%`;select.append(opt);});
+          if(item.options.some(o=>o.option_id===resourceChoiceMemory.get(item.course_id)))select.value=resourceChoiceMemory.get(item.course_id);
+          select.addEventListener('change',()=>resourceChoiceMemory.set(item.course_id,select.value));
+          if(item.options.length)card.append(select);
+          batchEntries.push({course_id:item.course_id,select,blocked:Boolean(item.issues?.length)||item.decision?.decision==='rejected'});
+          const wrap=document.createElement('div');wrap.className='review-table-wrap';const table=document.createElement('table');table.className='review-table';wrap.append(table);card.append(wrap);
+          const similarityNote=document.createElement('p');similarityNote.className='details';card.append(similarityNote);
+          function draw(){
+            table.replaceChildren();const head=document.createElement('tr');for(const text of ['核对项目','原本设置','建议设置']){const th=document.createElement('th');th.textContent=text;head.append(th);}table.append(head);
+            const chosen=item.options.find(o=>(o.option_id||o.room_id)===select.value);
+            similarityNote.textContent=chosen?.similarity?`相似度 ${Math.round(chosen.similarity.score*100)}%（功能特征排序分数）：${chosen.similarity.reasons.join('；')}。分数不等于设施已确认。`:'教室用途及设备待核实。';
+            if(card.querySelector('.review-accept'))card.querySelector('.review-accept').textContent=chosen?.conditional_only?'接受人数假设并试排':'接受并试排';
+            for(const [key,label] of fields){const row=document.createElement('tr');if(chosen?.changes.includes(key))row.className='review-changed';
+              for(const text of [label,item.original[key]??'',chosen?chosen.proposed[key]:'暂无可行建议']){const td=document.createElement('td');td.textContent=text===''?'未限定 / 空':String(text);row.append(td);}table.append(row);}
+          }
+          select.addEventListener('change',draw);draw();
+          const note=document.createElement('p');note.className='details';note.textContent=`授课周：${(item.teaching_weeks||[]).join('、')}；试排范围：${(review.search_days||[]).map(d=>'周'+'一二三四五六日'[d]).join('、')}，第 ${(review.search_periods||[]).join('、')} 节。${item.hour_note?`接受此方案同时确认按每周 ${item.proposed_weekly_periods} 个节次试排。`:''} 人数假设采用前需核实当前选课；类型或教学楼有变化时，请核对设施适用性。接受后会自动诊断并尝试后续策略，沿用右侧当前移动上限、可动清单和晚间/周末授权；不更换所选资源，不自动放宽课程禁排。`;card.append(note);
+          const actions=document.createElement('div');actions.className='review-actions';
+          const accept=document.createElement('button');accept.className='history review-accept';accept.textContent=item.options.find(o=>(o.option_id||o.room_id)===select.value)?.conditional_only?'接受人数假设并试排':'接受并试排';accept.disabled=!item.options.length||Boolean(item.issues?.length);
+          const reject=document.createElement('button');reject.className='history';reject.textContent='不接受';actions.append(accept,reject);card.append(actions);
+          if(item.decision?.decision==='rejected'){status.textContent='已记录不接受 · 本课未通过';reject.disabled=true;}
+          if(item.issues?.length){status.textContent+=' 尚有基础数据问题，核实后才能接受试排：'+item.issues.join('；');}
+          async function submit(decision){
+            // One revision at a time; a successful acceptance replaces all cards with the new basis.
+            if(currentJobId){notify('请先等待当前任务完成');return;}
+            const buttons=[...ask.querySelectorAll('button')];const disabled=buttons.map(b=>b.disabled);buttons.forEach(b=>b.disabled=true);
+            const waiting=addMessage(decision==='accept'?`正在按建议试排 ${item.course_id} 并验收…`:`正在记录 ${item.course_id} 的不接受决定…`);
+            try{
+              const form=new FormData();form.append('basis',JSON.stringify(basis));form.append('basis_token',review.basis_token);form.append('course_id',item.course_id);const selected=item.options.find(o=>(o.option_id||o.room_id)===select.value);form.append('room_id',selected?.room_id||'');form.append('option_id',selected?.option_id||'');form.append('decision',decision);appendResourceAuthorization(form);
+              const response=await fetch('/api/room-review',{method:'POST',body:form});let next=await response.json();if(!response.ok)throw Error(next.error?.message||'提交失败');localStorage.setItem('timetableInitialJob',next.job_id);next=await waitForInitial(next.job_id,waiting);
+              if(!next.ok)throw Error(next.error?.message||'试排未通过');
+              waiting.textContent=next.agent_report?.explanation||'决定已保存';
+              if(next.output_state_id){ask.remove();activateState(next.output_state_id,(next.run_dir||'').split('/').pop());if(next.resource_followup)renderResult(next);else if(next.pending_source_run_id)await refreshPendingWork(next.pending_source_run_id);else renderResult(next);}
+              else{status.textContent='已记录不接受 · 本课未通过';reject.disabled=true;const entry=batchEntries.find(e=>e.course_id===item.course_id);if(entry)entry.blocked=true;refreshBatchButton();}
+            }catch(error){status.textContent='本课未通过：'+error.message;waiting.textContent=status.textContent;}
+            finally{buttons.forEach((b,i)=>b.disabled=disabled[i]);if(status.textContent.startsWith('已记录不接受'))reject.disabled=true;}
+          }
+          accept.addEventListener('click',()=>submit('accept'));reject.addEventListener('click',()=>submit('reject'));ask.append(card);
+        }
+        refreshBatchButton();
+        pointToChat(panel,`有 ${review.course_plans.length} 门课需要核对，原设置和教室建议已显示在左侧对话。`);renderPendingOverview(data);scrollChat();
+      }catch(error){panel.textContent='未排课程对比暂不可用：'+error.message;}
+    }
+
+    function appendResourceAuthorization(form){
+      appendAgentSettings(form);
+      form.append('allow_weekend',document.getElementById('allowWeekend').checked?'true':'false');
+      form.append('allow_evening',document.getElementById('allowEvening').checked?'true':'false');
+    }
+    function isSchedulingConversation(prompt){
+      if(/为什么|为啥|原因|解释|有没有|能不能|能否|怎么办|怎么|哪些|多少|什么|排不进|no_time_pattern|[？?]/i.test(prompt))return true;
+      if(/(全部|全量|所有).{0,12}(补排|排课|调课|处理)|(补排|处理|排课|调课).{0,10}(全部|所有|剩余).{0,8}(课程|课表)|^(调课|排课|补排)$/.test(prompt.trim()))return false;
+      if(/继续|接着|试试|尝试|允许|授权/.test(prompt))return true;
+      return Boolean(previousChatRunId);
+    }
+    function renderScheduleChat(data){
+      const report=data.chat_report;if(!report)return;
+      const resultPanel=document.getElementById('runResult');resultPanel.replaceChildren();resultPanel.hidden=false;document.getElementById('emptyRun').hidden=true;
+      document.getElementById('runId').textContent=(report.candidates?.length?'候选待确认':data.status==='needs_input'?'等待下一步条件':'已结束')+' · '+(data.run_dir||'').split('/').pop().slice(-8);
+      const current=document.createElement('p');current.textContent=`本次排课对话 · 当前版本 ${data.output_state_id}；正式课表尚未改变。`;resultPanel.append(current);
+      const status=document.createElement('p');status.textContent=report.candidates?.length?'已找到候选，核对聊天区具体安排后确认保存。':'授权内试算已结束，暂未找到候选；具体原因和下一步条件见聊天区。';resultPanel.append(status);
+      const trace=document.createElement('p');trace.textContent='实际调用：'+(report.tool_calls||[]).map(c=>c.tool).join(' → ');resultPanel.append(trace);
+      const runId=(data.run_dir||'').split('/').pop();previousChatRunId=runId;localStorage.setItem('timetableChatRunId',runId);
+      const bubble=askInChat('schedule-chat:'+runId,report.answer);
+      const details=document.createElement('details');const title=document.createElement('summary');title.textContent='查看诊断依据和实际调用工具';details.append(title);
+      (report.diagnostics||[]).forEach(course=>{const heading=document.createElement('p');heading.textContent=`${course.course_id} ${course.course_name}`;details.append(heading);course.slots.forEach(slot=>{const line=document.createElement('p');line.textContent=slot.placements.map(p=>`周${'一二三四五六日'[p.day]}第${p.periods.join('、')}节`).join('；')+'：'+slot.blockers.map(b=>`${b.course_id} ${b.course_name}（${b.resources.map(k=>k==='teacher'?'教师':k==='room'?'教室':k).join('、')}占用）`).join('；');details.append(line);});});
+      const tools=document.createElement('p');tools.textContent='实际调用：'+(report.tool_calls||[]).map(c=>c.tool+(c.rejected?'（未执行：'+c.rejected+'）':'')).join(' → ');details.append(tools);bubble.append(details);
+      (report.candidates||[]).forEach(candidate=>{const card=document.createElement('section');card.className='room-review-card';const heading=document.createElement('strong');heading.textContent=`试算候选：可排 ${candidate.summary.inserted} 门、移动 ${candidate.summary.moved} 门（尚未保存）`;card.append(heading);const checks=[];
+        candidate.changes.forEach(row=>{const line=document.createElement('p');line.textContent=`${row.course_id} ${row.course_name}：${row.operation==='move'?'移动已有课':'新排入'}；`+row.after.map(p=>`第${p.weeks.join('、')}周，周${'一二三四五六日'[p.day]}第${p.periods.join('、')}节，教室${p.room_id}`).join('；')+`。原偏好：${row.original_time_preference||'无'}。`;card.append(line);
+          if((candidate.required_unavailable_ids||[]).includes(row.course_id)){const label=document.createElement('label');const check=document.createElement('input');check.type='checkbox';check.value=row.course_id;checks.push(check);label.append(check,document.createTextNode('明确同意本课进入自己的禁排时段：'+row.original_course_unavailable));card.append(label);}
+        });
+        const save=document.createElement('button');save.className='history';save.textContent='确认保存这套候选';card.append(save);bubble.append(card);
+        save.addEventListener('click',async()=>{if(currentJobId){notify('请先等待当前任务完成');return;}if(activeStateId!==candidate.parent_state_id){notify('当前版本已经改变，请重新试算受影响课程');return;}if(checks.some(check=>!check.checked)){notify('请逐门确认禁排变更后再保存');return;}save.disabled=true;try{const form=new FormData();form.append('run_id',runId);form.append('candidate_id',candidate.candidate_id);form.append('candidate_hash',candidate.candidate_hash);form.append('state_id',activeStateId);form.append('accepted_unavailable_ids',JSON.stringify(checks.map(check=>check.value)));form.append('confirmed','true');const response=await fetch('/api/chat-candidate',{method:'POST',body:form});const result=await response.json();if(!response.ok||!result.ok)throw Error(result.error?.message||'保存未通过');activateState(result.output_state_id,(result.run_dir||'').split('/').pop());syncState();syncAction();save.textContent='已保存';addMessage(`已确认保存：新排入 ${result.summary.inserted} 门，移动 ${result.summary.moved} 门，剩余 ${result.summary.remaining} 门。`);}catch(error){notify(error.message);save.disabled=false;}});
+      });
+      if(report.resource_suggestions?.length){const note=document.createElement('p');note.textContent='尚有未确认资源建议，不能直接当作事实使用。';bubble.append(note);}
+      scrollChat();
+    }
+    async function askSchedulingChat(prompt){
+      if(selectionPending){addMessage('正在读取所选课表，请稍候。');return;}
+      if(!activeStateId){addMessage('请先从运行记录选择当前课表，再问具体课程；系统会读取该版本诊断并试算。');return;}
+      const send=document.getElementById('sendButton');send.disabled=true;const waiting=addMessage('正在读取当前版本和已接受方案，诊断后会继续调用授权范围内的试排工具…');
+      try{const form=new FormData();form.append('basis',JSON.stringify(activeViewedRunId?{run_id:activeViewedRunId}:{state_id:activeStateId}));form.append('request',prompt);form.append('previous_chat_run_id',previousChatRunId);form.append('allow_evening',document.getElementById('allowEvening').checked?'true':'false');form.append('allow_weekend',document.getElementById('allowWeekend').checked?'true':'false');appendAgentSettings(form);appendAiSettings(form);
+        const response=await fetch('/api/schedule/chat',{method:'POST',body:form});let data=await response.json();if(!response.ok)throw Error(data.error?.message||'对话提交失败');localStorage.setItem('timetableInitialJob',data.job_id);data=await waitForInitial(data.job_id,waiting);if(!data.ok)throw Error(data.error?.message||'本次诊断未完成');waiting.parentElement.remove();renderScheduleChat(data);
+      }catch(error){waiting.textContent=error.message;}finally{send.disabled=false;syncAction();}
+    }
+    function isQualityQuestion(prompt){return /排课质量|课表质量|质量检查|质量分析|质量报告|统计指标|偏好满足率|教室利用率|教师负担|周末占比|晚间占比/.test(prompt)&&!/(修改|调整|优化|重排).{0,8}(课程|课表|安排)/.test(prompt);}
+    async function askQuality(prompt='检查当前课表质量'){
+      if(selectionPending){notify('正在读取所选课表，请稍候');return;}
+      if(currentJobId){notify('请先等待当前排课任务完成，再检查指定版本');return;}
+      if(!activeStateId){addMessage('请先选择一个已保存的课表版本，再检查质量。');return;}
+      const state=activeStateId;const send=document.getElementById('sendButton');send.disabled=true;
+      const waiting=addMessage('正在检查当前整张课表，按授课周统计并核对逐课确认记录…');
+      try{const form=new FormData();form.append('basis',JSON.stringify({state_id:state}));
+        const response=await fetch('/api/quality',{method:'POST',body:form});const data=await response.json();if(!response.ok||!data.ok)throw Error(data.error?.message||'质量检查未完成');
+        waiting.textContent=data.answer;const links=document.createElement('div');
+        [['report','打开完整质量报告'],['details','下载逐课检查明细'],['data','下载指标数据']].forEach(([key,label])=>{const a=document.createElement('a');a.className='history';a.href=data.downloads[key];a.textContent=label;a.target='_blank';a.rel='noopener';links.append(a)});waiting.append(links);
+        if(activeStateId===state){const target=document.getElementById('runResult');target.replaceChildren();target.hidden=false;document.getElementById('emptyRun').hidden=true;document.getElementById('runId').textContent='质量检查完成 · '+state.slice(0,8);const title=document.createElement('strong');title.textContent='整表质量检查 · 只读';target.append(title);const summary=document.createElement('p');summary.textContent=`有安排 ${data.summary.recorded_courses} 门，逐周完整 ${data.summary.complete_courses} 门，未排 ${data.summary.remaining_courses} 门；违规涉及 ${data.summary.course_counts_by_status.violation} 门，待核实条件涉及 ${data.summary.course_counts_by_status.pending} 门。`;target.append(summary);const a=document.createElement('a');a.href=data.downloads.report;a.target='_blank';a.rel='noopener';a.textContent='打开完整报告与图表';target.append(a);}
+      }catch(error){waiting.textContent='质量检查未完成：'+error.message;}finally{send.disabled=false;syncAction();}
+    }
+    document.getElementById('qualityNav').addEventListener('click',()=>{showWorkspace('conversation');askQuality();});
+    document.getElementById('qualityTop').addEventListener('click',()=>askQuality());
+    function isAcceptanceQuestion(prompt){
+      if(!['验收','校验','验证'].some(k=>prompt.includes(k)))return false;
+      if(['跳过验收','绕过验收','关闭校验','强制通过','改成通过'].some(k=>prompt.includes(k)))return false;
+      return ['验收','校验','验证'].includes(prompt.trim())||['什么','怎么','为什么','哪些','哪里','如何','解释','查看','说明','不通过','失败','结果','问题','一下','重新','运行','检查'].some(k=>prompt.includes(k));
+    }
+    async function askAcceptance(prompt){
+      if(selectionPending){addMessage('正在读取你选择的课表，请稍候再问验收问题。');return;}
+      const basis=activeDraftRunId?{run_id:activeDraftRunId}:activeStateId?{state_id:activeStateId}:null;
+      const send=document.getElementById('sendButton');send.disabled=true;const waiting=addMessage('正在读取当前课表的验收证据，只做检查与解释…');
+      try{const form=new FormData();form.append('basis',JSON.stringify(basis));form.append('request',prompt);
+        const response=await fetch('/api/acceptance/explain',{method:'POST',body:form});const payload=await response.json();if(!response.ok||!payload.ok)throw Error(payload.error?.message||'验收解释读取失败');
+        waiting.textContent=payload.report.answer;
+      }catch(error){waiting.textContent=error.message;}finally{send.disabled=false;syncAction();}
+    }
+    document.getElementById('chatForm').addEventListener('submit',async event=>{event.preventDefault();const input=document.getElementById('prompt');const prompt=input.value.trim();if(!prompt)return;addMessage(prompt,'user');input.value='';const action=document.getElementById('taskAction').value;if(isQualityQuestion(prompt)){await askQuality(prompt);return;}if(action==='inspect_acceptance'||isAcceptanceQuestion(prompt)){await askAcceptance(prompt);return;}if(action==='repair'&&isSchedulingConversation(prompt)){await askSchedulingChat(prompt);return;}if(selectionPending){addMessage('正在读取所选课表，请稍候。');return;}if(activeDraftRunId&&['repair','legacy_reschedule'].includes(action)&&document.getElementById('continueState').checked){addMessage(`当前选择的是候选 ${activeDraftRunId}，尚未验收通过，不能直接调课。修正结果已保存，请先处理验收问题；不会切换到旧课表。`);return;}const continueState=action!=='diagnose'&&action!=='initial_schedule'&&activeStateId&&document.getElementById('continueState').checked;const required=action==='diagnose'?['proposal']:action==='initial_schedule'?['course','teacher','room','class_path']:continueState?[]:['course','teacher','room','class_path','schedule','failed'];const missing=required.filter(name=>!files[name]);if(missing.length){const names={course:'课程表',teacher:'教师表',room:'教室表',class_path:'班级表',schedule:'当前课表',failed:'未排课程',proposal:'已有候选方案'};addMessage(`请先上传：${missing.map(name=>names[name]).join('、')}。`);notify('还缺少必需的数据文件');return}const send=document.getElementById('sendButton');send.disabled=true;send.querySelector('span').textContent='正在分析';const waiting=addMessage(action==='initial_schedule'?'正在核对四张基础表并启动后台首轮排课…':action==='diagnose'?'正在读取候选方案并整理逐课证据…':continueState?'正在从指定课表版本继续处理…':'正在核对六类输入文件并创建课表基线版本…');try{const form=new FormData();Object.entries(files).filter(([key])=>required.includes(key)||(action==='initial_schedule'&&['combinations','clustering'].includes(key))).forEach(([key,file])=>form.append(key,file,file.name));form.append('action',action);form.append('request',prompt);form.append('planner',action==='repair'?document.getElementById('planner').value:'deterministic');if(action==='repair'&&['llm','agent'].includes(document.getElementById('planner').value))appendAiSettings(form);if(action==='repair'&&document.getElementById('planner').value==='agent')appendAgentSettings(form);if(action==='initial_schedule'){form.append('weeks',document.getElementById('initialWeeks').value);form.append('strategy',document.getElementById('initialStrategy').value);form.append('seed',document.getElementById('initialSeed').value);}form.append('allow_evening',document.getElementById('allowEvening').checked?'true':'false');form.append('allow_weekend',document.getElementById('allowWeekend').checked?'true':'false');if(action==='legacy_reschedule')form.append('legacy_allow_move',document.getElementById('legacyAllowMove').checked?'true':'false');if(continueState){form.append('state_id',activeStateId);if(activeViewedRunId)form.append('viewed_run_id',activeViewedRunId);}const response=await fetch('/api/run',{method:'POST',body:form});let data=await response.json();if(response.status===202&&data.job_id){localStorage.setItem('timetableInitialJob',data.job_id);data=await waitForInitial(data.job_id,waiting);}waiting.parentElement.remove();renderResult(data);if(data.status==='cancelled'&&data.output_state_id){activeStateId=data.output_state_id;localStorage.setItem('timetableStateId',activeStateId);syncState();syncAction();}if(data.agent_report){agentPreviousRun=(data.run_dir||'').split('/').pop();agentContext=`上一任务目标：${prompt}\n上一轮问题：${(data.agent_report.questions||[]).join('；')}\n上一轮解释：${data.agent_report.explanation||''}`;if(data.output_state_id){activeStateId=data.output_state_id;localStorage.setItem('timetableStateId',activeStateId);syncState();syncAction();}}if(data.ok){if(data.output_state_id){activeStateId=data.output_state_id;localStorage.setItem('timetableStateId',activeStateId);if(action==='initial_schedule')document.getElementById('taskAction').value='repair';syncState();syncAction()}const result=data.final_response?.result||{};const summary=result.summary||result.proposal?.summary||{};addMessage(data.agent_report?agentCompletionText(data):action==='diagnose'?`诊断完成。报告列出了已有候选中的逐课状态和证据，可在右侧查看运行记录。`: `处理完成，已生成新课表版本 ${data.output_state_id||''}。${summary.inserted!==undefined?`本次排入 ${summary.inserted} 门课程。${data.automatic_reschedule?.status==='failed'?'自动调课未通过，已保留首排版本：'+data.automatic_reschedule.error.message+'。':data.automatic_reschedule?.status==='completed'?'已自动完成旧引擎调课。':''}`:''}下一次勾选“接着当前课表版本”即可从此版本继续。`)}else addMessage(`${data.status==='cancelled'?'任务已中止':'这次任务未完成'}：${data.error?.message||data.final_response?.error?.message||'输入或策略检查未通过'}。已记录本次运行，${data.status==='cancelled'?'可从已保存版本继续；没有已保存版本时需重新提交。':'修正后可以再次尝试。'}`)}catch(error){waiting.parentElement.remove();addMessage('无法连接本机排课服务。请检查服务是否启动，然后重试。');notify('服务连接失败')}finally{send.disabled=false;syncAction()}});
+    document.getElementById('prompt').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();document.getElementById('chatForm').requestSubmit()}});
+    document.getElementById('cancelTask').addEventListener('click',async()=>{
+      const id=currentJobId;if(!id)return;
+      const button=document.getElementById('cancelTask');button.disabled=true;button.textContent='正在中止…';
+      try{const form=new FormData();form.append('run_id',id);
+        const response=await fetch('/api/cancel',{method:'POST',body:form});const data=await response.json();
+        if(!response.ok)throw Error(data.error?.message||'中止失败');
+        notify(data.result.status==='cancelled'?'任务已中止，已保存版本保留；未保存的本轮搜索结果已丢弃。':'任务已完成，可查看结果');
+      }catch(error){addMessage(error.message);button.disabled=false;}
+      finally{button.textContent='中止当前任务';}
+    });
+    async function waitForInitial(id,waiting){
+      currentJobId=id;
+      document.getElementById("runId").textContent="运行中 · "+id.slice(-8);
+      document.getElementById('runResult').hidden=true;
+      let logCursor=0;const lines=[];
+      const panel=document.getElementById('liveProgress');panel.hidden=false;
+      const bar=document.getElementById('progressBar');bar.removeAttribute('value');
+      const label=document.getElementById('progressLabel'),logs=document.getElementById('progressLogs');logs.textContent='';
+      const cancel=document.getElementById('cancelTask');cancel.hidden=false;cancel.disabled=false;
+      try{for(;;){
+        await new Promise(resolve=>setTimeout(resolve,2000));
+        const response=await fetch(`/api/jobs/${encodeURIComponent(id)}?after=${logCursor}`,{cache:'no-store'});
+        const job=await response.json();
+        if(!response.ok)throw Error(job.error?.message||'读取后台任务失败');
+        const p=job.progress||{};
+        logCursor=job.log_cursor??logCursor;
+        if(job.logs_truncated)lines.push('…较早日志已折叠，完整记录保存在本机运行目录。');
+        for(const event of job.logs||[]){const time=new Date(event.timestamp).toLocaleTimeString('zh-CN',{hour12:false});lines.push(`[${time}] ${event.message}${event.percent!==undefined?` · ${event.percent}% (${event.completed}/${event.total})`:''}`);}
+        if(lines.length>200)lines.splice(0,lines.length-200);
+        logs.textContent=lines.join('\n');logs.scrollTop=logs.scrollHeight;
+        if(p.percent!==undefined)bar.value=p.percent;else bar.removeAttribute('value');
+        const stage={initial:'首排处理',legacy:'旧引擎调课',agent:'AI 决策轮次',task:'任务'}[p.stage]||'任务';
+        label.textContent=`${stage}${p.percent!==undefined?` ${p.percent}% · ${p.completed}/${p.total}`:''} · ${p.message||'等待进度'}`;
+        if(job.done){document.getElementById('runId').textContent=(job.result?.status==='needs_input'?'待处理':'已结束')+' · '+id.slice(-8);localStorage.removeItem('timetableInitialJob');return job.result;}
+        if(document.getElementById('cancelTask').textContent!=='正在中止…')document.getElementById('cancelTask').disabled=job.can_cancel===false;
+        waiting.textContent=`${p.message||'后台任务运行中'}${p.total!==undefined?` · 处理进度 ${p.percent??Math.round(100*p.completed/Math.max(1,p.total))}% (${p.completed}/${p.total})`:''}。刷新页面后仍可恢复查看。`;
+      }}finally{currentJobId=null;cancel.hidden=true;cancel.disabled=false;}
+    }
+    async function restoreInitial(){
+      const id=localStorage.getItem('timetableInitialJob');if(!id)return;
+      const send=document.getElementById('sendButton');send.disabled=true;
+      const waiting=addMessage('正在恢复后台任务进度…');
+      try{const data=await waitForInitial(id,waiting);renderResult(data);if(data.status==='cancelled'&&data.output_state_id){activeStateId=data.output_state_id;localStorage.setItem('timetableStateId',activeStateId);syncState();syncAction();}if(data.agent_report){agentPreviousRun=(data.run_dir||'').split('/').pop();agentContext=`上一任务目标：${data.agent_report.goal||''}\n上一任务问题：${(data.agent_report.questions||[]).join('；')}`;}waiting.textContent=data.ok?'后台任务完成，可查看结果并从当前版本继续。':`后台任务需要处理：${data.error?.message||'请查看运行记录'}`;if(data.output_state_id){activeStateId=data.output_state_id;localStorage.setItem('timetableStateId',activeStateId);document.getElementById('taskAction').value='repair';syncState();syncAction();}}
+      catch{waiting.textContent='暂时无法读取后台任务。刷新页面可重试；任务编号：'+id;}
+      finally{send.disabled=false;}
+    }
+    if(!selectionPending)restoreInitial();
+    checkService();
+    const requestedRun=requestedSelectionRun;
+    if(requestedRun&&/^[0-9]{8}T[0-9]{6}Z-[a-f0-9]{8}$/.test(requestedRun)){
+      fetch('/api/runs/'+requestedRun,{cache:'no-store'}).then(r=>r.json()).then(data=>{renderResult(data);if(data.agent_report?.explanation)addMessage(humanExplanation(data.agent_report.explanation));}).catch(()=>{applyResultSelection({});notify('无法读取指定运行记录，未选择任何旧版本');}).finally(()=>{selectionPending=false;document.getElementById('sendButton').disabled=false;syncState();syncAction();});
+    }else if(selectionPending){selectionPending=false;applyResultSelection({});document.getElementById('sendButton').disabled=false;notify('运行编号无效，未选择旧课表');}
+  </script>
+</body>
+</html>
